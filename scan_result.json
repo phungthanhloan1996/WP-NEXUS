@@ -1,8 +1,8 @@
 {
   "https://dolphin-vc.com": {
     "url": "https://dolphin-vc.com",
-    "timestamp": "2026-01-12 16:52:43",
-    "scan_duration": 52.08,
+    "timestamp": "2026-01-13 13:18:22",
+    "scan_duration": 48.36,
     "is_wordpress": true,
     "wp_version": "2",
     "version_methods": [

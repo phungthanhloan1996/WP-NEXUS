@@ -45,7 +45,8 @@ VULNERABLE_PLUGINS_2025_2026 = {
     "wp-automatic": {"max": "3.92.2", "cve": "CVE-2025-2563", "cvss": 9.8},
     "essential-addons-for-elementor-lite": {"max": "5.9.20", "cve": "CVE-2025-1034", "cvss": 9.8},
     "the-plus-addons-for-elementor-page-builder": {"max": "5.6.0", "cve": "CVE-2025-1062", "cvss": 9.8},
-    # Thêm nhiều hơn tại đây hoặc load từ file
+    "wp-graphql": {"max": "1.0.0", "cve": "CVE-2026-XXXX", "cvss": 8.5},
+    "jwt-auth-for-wp": {"max": "2.0.0", "cve": "CVE-2026-YYYY", "cvss": 9.1},
 }
 
 # ===================== SETUP LOGGING =====================
@@ -149,6 +150,18 @@ class WPScanner:
 
         score = sum(indicators.values())
         return score >= 3, indicators
+
+
+
+    def detect_headless_wp(url):
+        checks = [
+            ("/graphql", "GraphQL endpoint"),
+            ("/api/graphql", "GraphQL API"),
+            ("/wp-json/graphql", "WP GraphQL"),
+            ("/_next/static", "Next.js frontend"),
+            ("/nuxt/", "Nuxt.js frontend"),
+        ]
+
 
     def detect_wp_version(self, url: str) -> Tuple[str, List[str]]:
         version = "Unknown"

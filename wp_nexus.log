@@ -1,3 +1,9 @@
 2026-01-12 16:52:43,147 [INFO] Scanning: https://dolphin-vc.com
 2026-01-12 16:53:35,230 [INFO] Completed https://dolphin-vc.com in 52.08s - Plugins: 1
 2026-01-12 16:53:35,231 [INFO] Kết quả đã lưu vào: scan_result.json
+2026-01-13 13:13:57,828 [INFO] Scanning: https://dolphin-vc.com
+2026-01-13 13:14:50,972 [INFO] Completed https://dolphin-vc.com in 53.14s - Plugins: 1
+2026-01-13 13:14:50,974 [INFO] Kết quả đã lưu vào: scan_result.json
+2026-01-13 13:18:22,898 [INFO] Scanning: https://dolphin-vc.com
+2026-01-13 13:19:11,256 [INFO] Completed https://dolphin-vc.com in 48.36s - Plugins: 1
+2026-01-13 13:19:11,259 [INFO] Kết quả đã lưu vào: scan_result.json
