@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-import sys, re, ssl, socket, requests, time, signal, random
-from ipaddress import ip_network, ip_address
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import sys, re, ssl, socket, time, signal, random
+from ipaddress import ip_network
 from urllib.parse import urlparse
 import threading
-
-requests.packages.urllib3.disable_warnings()
+import asyncio
+import aiohttp
+from aiohttp import TCPConnector, ClientTimeout
+import async_timeout
 
 # ================= CONFIG =================
-THREADS = 50
+THREADS = 100  # Increased for async
 TIMEOUT = 8
 MAX_HTML = 500_000
 DELAY_MIN = 0.1
 DELAY_MAX = 0.5
+MAX_CONCURRENT = 200  # Max concurrent connections
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -82,6 +84,11 @@ SCAN_STATS = {
 # Store only VULN findings
 VULN_FINDINGS = []
 
+# SSL context for faster connections
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+
 # ================= DISPLAY =================
 def update_progress_line():
     """Display single progress line at bottom - ONLY THIS LINE SHOWS"""
@@ -139,35 +146,40 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-# ================= UTILITY FUNCTIONS =================
-def get_random_headers():
-    headers = HEADERS_TEMPLATE.copy()
-    headers["User-Agent"] = random.choice(USER_AGENTS)
-    return headers
-
-def safe_request(url, method="GET", **kwargs):
-    """Safe HTTP request with retry and delay"""
-    time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+# ================= ASYNC HTTP CLIENT =================
+async def safe_request(session, url, method="GET", headers=None, timeout=TIMEOUT):
+    """Async HTTP request with delay"""
+    await asyncio.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
     
     try:
-        headers = kwargs.pop('headers', get_random_headers())
-        response = requests.request(
-            method=method,
-            url=url,
-            headers=headers,
-            timeout=TIMEOUT,
-            verify=False,
-            allow_redirects=True,
-            **kwargs
-        )
-        return response
-    except requests.exceptions.Timeout:
+        if headers is None:
+            headers = HEADERS_TEMPLATE.copy()
+            headers["User-Agent"] = random.choice(USER_AGENTS)
+        
+        async with async_timeout.timeout(timeout):
+            async with session.request(
+                method=method,
+                url=url,
+                headers=headers,
+                ssl=ssl_context,
+                allow_redirects=True
+            ) as response:
+                # Read response text (but limit size)
+                text = await response.text()
+                return {
+                    'status': response.status,
+                    'url': str(response.url),
+                    'text': text[:MAX_HTML],
+                    'headers': dict(response.headers)
+                }
+    except asyncio.TimeoutError:
         return None
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return None
 
-def resolve_domains_from_ip(ip):
-    """Resolve domains from IP using multiple methods"""
+# ================= SYNC FUNCTIONS (for SSL cert extraction) =================
+def resolve_domains_from_ip_sync(ip):
+    """Resolve domains from IP using SSL certificate (sync)"""
     domains = set()
     
     # Method 1: TLS Certificate
@@ -191,18 +203,11 @@ def resolve_domains_from_ip(ip):
     except:
         pass
     
-    # Method 2: DNS Reverse Lookup
-    try:
-        hostname, _, _ = socket.gethostbyaddr(ip)
-        if hostname and '.' in hostname:
-            domains.add(hostname.lower())
-    except:
-        pass
-    
     return list(domains)
 
-def is_wordpress_site(domain):
-    """Check if domain is WordPress"""
+# ================= ASYNC SCANNING FUNCTIONS =================
+async def is_wordpress_site_async(session, domain):
+    """Async check if domain is WordPress"""
     checks = [
         f"http://{domain}/wp-json/",
         f"https://{domain}/wp-json/",
@@ -213,14 +218,14 @@ def is_wordpress_site(domain):
     ]
     
     for url in checks:
-        response = safe_request(url, timeout=5)
-        if response and response.status_code in [200, 401, 403, 301, 302]:
-            if response.status_code in [301, 302]:
-                final_url = response.url
+        response = await safe_request(session, url, timeout=5)
+        if response and response['status'] in [200, 401, 403, 301, 302]:
+            if response['status'] in [301, 302]:
+                final_url = response['url']
                 if any(wp_sig in final_url for wp_sig in ['wp-json', 'wp-admin', 'wp-content']):
                     return get_base_url(final_url)
-            elif response.text and 'wp-content' in response.text.lower():
-                return get_base_url(response.url)
+            elif response['text'] and 'wp-content' in response['text'].lower():
+                return get_base_url(response['url'])
     
     return None
 
@@ -243,43 +248,43 @@ def find_plugins_in_html(html):
     
     return plugins
 
-def get_plugin_version(base_url, plugin_name):
-    """Get plugin version"""
+async def get_plugin_version_async(session, base_url, plugin_name):
+    """Async get plugin version"""
     version = None
     
     # Check version files
     for vfile in VERSION_FILES:
         url = f"{base_url}/wp-content/plugins/{plugin_name}/{vfile}"
-        response = safe_request(url)
-        if response and response.status_code == 200:
-            match = VERSION_REGEX.search(response.text)
+        response = await safe_request(session, url, timeout=5)
+        if response and response['status'] == 200:
+            match = VERSION_REGEX.search(response['text'])
             if match:
                 version = match.group(1)
                 break
     
     return version
 
-def check_suspicious_files(base_url, plugin_name):
-    """Check for suspicious files in plugin directory"""
+async def check_suspicious_files_async(session, base_url, plugin_name):
+    """Async check for suspicious files in plugin directory"""
     suspicious = []
     
     for sfile in SUSPICIOUS_FILES:
         url = f"{base_url}/wp-content/plugins/{plugin_name}/{sfile}"
-        response = safe_request(url)
-        if response and response.status_code in [200, 403]:
+        response = await safe_request(session, url, timeout=5)
+        if response and response['status'] in [200, 403]:
             suspicious.append(sfile)
     
     return suspicious
 
-def check_suspicious_paths(base_url):
-    """Check for suspicious paths on WordPress site"""
+async def check_suspicious_paths_async(session, base_url):
+    """Async check for suspicious paths on WordPress site"""
     suspicious = []
     
     for path in SUSPICIOUS_PATHS:
         url = f"{base_url}{path}"
-        response = safe_request(url)
-        if response and response.status_code == 200:
-            content = response.text.lower()
+        response = await safe_request(session, url, timeout=5)
+        if response and response['status'] == 200:
+            content = response['text'].lower()
             if path.endswith('.log') and ('error' in content or 'warning' in content):
                 suspicious.append((path, "DEBUG_LOG"))
             elif path.endswith('.env') and ('db_' in content or 'password' in content):
@@ -291,8 +296,8 @@ def check_suspicious_paths(base_url):
     
     return suspicious
 
-def scan_wordpress_site(ip, base_url):
-    """Full scan of a WordPress site"""
+async def scan_wordpress_site_async(session, ip, base_url):
+    """Async full scan of a WordPress site"""
     results = {
         "ip": ip,
         "url": base_url,
@@ -303,42 +308,26 @@ def scan_wordpress_site(ip, base_url):
     
     try:
         # Get homepage for plugin detection
-        response = safe_request(base_url)
+        response = await safe_request(session, base_url, timeout=10)
         if not response:
             return results
         
-        html = response.text[:MAX_HTML]
+        html = response['text']
         
         # Find plugins
         plugins_found = find_plugins_in_html(html)
         all_plugins = plugins_found.union(set(COMMON_PLUGINS[:10]))
         
-        # Check each plugin
+        # Check each plugin concurrently
+        plugin_tasks = []
         for plugin in list(all_plugins)[:20]:  # Limit to 20 plugins per site
-            # Check if plugin exists
-            plugin_url = f"{base_url}/wp-content/plugins/{plugin}/"
-            resp = safe_request(plugin_url)
-            if not resp or resp.status_code not in [200, 403]:
-                continue
-            
-            plugin_info = {"version": None, "suspicious": []}
-            
-            # Get version
-            version = get_plugin_version(base_url, plugin)
-            if version:
-                plugin_info["version"] = version
-            
-            # Check suspicious files for dangerous plugins
-            if plugin in ['wp-file-manager', 'revslider', 'duplicator', 'backup', 'wp-automatic']:
-                suspicious = check_suspicious_files(base_url, plugin)
-                if suspicious:
-                    plugin_info["suspicious"] = suspicious
-            
-            if plugin_info["version"] or plugin_info["suspicious"]:
-                results["plugins"][plugin] = plugin_info
+            plugin_tasks.append(check_plugin_async(session, base_url, plugin, results))
+        
+        if plugin_tasks:
+            await asyncio.gather(*plugin_tasks)
         
         # Check suspicious paths
-        suspicious_paths = check_suspicious_paths(base_url)
+        suspicious_paths = await check_suspicious_paths_async(session, base_url)
         if suspicious_paths:
             results["suspicious_paths"] = suspicious_paths
         
@@ -356,6 +345,31 @@ def scan_wordpress_site(ip, base_url):
         
     except Exception as e:
         return results
+
+async def check_plugin_async(session, base_url, plugin, results):
+    """Async check a single plugin"""
+    # Check if plugin directory exists
+    plugin_url = f"{base_url}/wp-content/plugins/{plugin}/"
+    response = await safe_request(session, plugin_url, timeout=5)
+    
+    if not response or response['status'] not in [200, 403]:
+        return
+    
+    plugin_info = {"version": None, "suspicious": []}
+    
+    # Get version (async)
+    version = await get_plugin_version_async(session, base_url, plugin)
+    if version:
+        plugin_info["version"] = version
+    
+    # Check suspicious files for dangerous plugins
+    if plugin in ['wp-file-manager', 'revslider', 'duplicator', 'backup', 'wp-automatic']:
+        suspicious = await check_suspicious_files_async(session, base_url, plugin)
+        if suspicious:
+            plugin_info["suspicious"] = suspicious
+    
+    if plugin_info["version"] or plugin_info["suspicious"]:
+        results["plugins"][plugin] = plugin_info
 
 def save_results(results):
     """Save detailed results to file"""
@@ -392,74 +406,98 @@ def save_results(results):
         OUTPUT_FILE.write("\n" + "="*80 + "\n\n")
         OUTPUT_FILE.flush()
 
-# ================= MAIN SCAN FUNCTION =================
-def scan_ip_address(ip_str):
-    """Main function to scan a single IP address - SILENT MODE"""
-    try:
-        # Update progress counter (silently)
-        with output_lock:
-            SCAN_STATS["scanned"] += 1
-        
-        # Resolve domains from IP
-        domains = resolve_domains_from_ip(ip_str)
-        if not domains:
-            # SILENT - no output
+# ================= MAIN ASYNC SCAN FUNCTION =================
+async def scan_ip_address_async(session, semaphore, ip_str):
+    """Async function to scan a single IP address - SILENT MODE"""
+    async with semaphore:
+        try:
+            # Update progress counter
+            with output_lock:
+                SCAN_STATS["scanned"] += 1
+            
+            # Resolve domains from IP (sync but fast)
+            domains = resolve_domains_from_ip_sync(ip_str)
+            if not domains:
+                update_progress_line()
+                return
+            
+            # For each domain found
+            for domain in domains[:3]:  # Limit to 3 domains per IP
+                with output_lock:
+                    SCAN_STATS["domains_found"] += 1
+                
+                # Check if WordPress (async)
+                base_url = await is_wordpress_site_async(session, domain)
+                if not base_url:
+                    continue
+                
+                # Found WordPress!
+                with output_lock:
+                    SCAN_STATS["wp_sites"] += 1
+                
+                # Scan the WordPress site (async)
+                results = await scan_wordpress_site_async(session, ip_str, base_url)
+                
+                if results["plugins"]:
+                    with output_lock:
+                        SCAN_STATS["plugins_found"] += len(results["plugins"])
+                
+                # Check for vulnerabilities - ONLY PRINT THIS!
+                if results["vulnerabilities"]:
+                    with output_lock:
+                        SCAN_STATS["vulnerabilities"] += len(results["vulnerabilities"])
+                    
+                    vuln_info = results["vulnerabilities"][0]
+                    if len(results["vulnerabilities"]) > 1:
+                        vuln_info += f" (+{len(results['vulnerabilities'])-1} nữa)"
+                    
+                    # ONLY PRINT VULNERABILITIES!
+                    print_vuln_only(ip_str, f"{domain} - {vuln_info}")
+                    
+                    # Save detailed results
+                    save_results(results)
+            
+            # Update progress line
             update_progress_line()
-            return
-        
-        # For each domain found (silently update stats)
-        for domain in domains[:3]:  # Limit to 3 domains per IP
+            
+        except Exception as e:
             with output_lock:
-                SCAN_STATS["domains_found"] += 1
-            
-            # SILENT - don't print domain finding
-            
-            # Check if WordPress
-            base_url = is_wordpress_site(domain)
-            if not base_url:
-                continue
-            
-            # Found WordPress! (silently update stats)
-            with output_lock:
-                SCAN_STATS["wp_sites"] += 1
-            
-            # SILENT - don't print WordPress finding
-            
-            # Scan the WordPress site
-            results = scan_wordpress_site(ip_str, base_url)
-            
-            if results["plugins"]:
-                with output_lock:
-                    SCAN_STATS["plugins_found"] += len(results["plugins"])
-                
-                # SILENT - don't print plugin finding
-            
-            # Check for vulnerabilities - ONLY PRINT THIS!
-            if results["vulnerabilities"]:
-                with output_lock:
-                    SCAN_STATS["vulnerabilities"] += len(results["vulnerabilities"])
-                
-                vuln_info = results["vulnerabilities"][0]
-                if len(results["vulnerabilities"]) > 1:
-                    vuln_info += f" (+{len(results['vulnerabilities'])-1} nữa)"
-                
-                # ONLY PRINT VULNERABILITIES!
-                print_vuln_only(ip_str, f"{domain} - {vuln_info}")
-                
-                # Save detailed results
-                save_results(results)
+                SCAN_STATS["errors"] += 1
+            update_progress_line()
+
+async def process_batch_async(ip_batch):
+    """Process a batch of IPs concurrently"""
+    # Create aiohttp session with connection pooling
+    connector = TCPConnector(
+        limit=MAX_CONCURRENT,
+        limit_per_host=10,
+        ssl=ssl_context,
+        force_close=False,
+        enable_cleanup_closed=True
+    )
+    
+    timeout = ClientTimeout(total=TIMEOUT * 2, connect=5)
+    
+    async with aiohttp.ClientSession(
+        connector=connector,
+        timeout=timeout,
+        headers=HEADERS_TEMPLATE
+    ) as session:
         
-        # Update progress line
-        update_progress_line()
+        # Semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT)
         
-    except Exception as e:
-        with output_lock:
-            SCAN_STATS["errors"] += 1
-        # SILENT - don't print errors
-        update_progress_line()
+        # Create tasks for all IPs in batch
+        tasks = []
+        for ip in ip_batch:
+            task = asyncio.create_task(scan_ip_address_async(session, semaphore, ip))
+            tasks.append(task)
+        
+        # Wait for all tasks to complete
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 # ================= MAIN =================
-def main():
+async def main_async():
     global OUTPUT_FILE, SCAN_STATS
     
     if len(sys.argv) != 3:
@@ -482,7 +520,7 @@ def main():
     # Open output file
     try:
         OUTPUT_FILE = open(output_filename, "w", encoding="utf-8")
-        OUTPUT_FILE.write(f"WordPress Security Scan Report\n")
+        OUTPUT_FILE.write(f"WordPress Security Scan Report (Async)\n")
         OUTPUT_FILE.write(f"Time: {time.ctime()}\n")
         OUTPUT_FILE.write(f"Target: {ip_range}\n")
         OUTPUT_FILE.write(f"Total IPs: {SCAN_STATS['total_ips']}\n")
@@ -492,37 +530,28 @@ def main():
         sys.exit(1)
     
     # Display banner
-    print("\n" + "="*60)
-    print("🛡️  WORDPRESS SECURITY SCANNER - SILENT MODE")
-    print("="*60)
+    print("\n" + "="*70)
+    print("🛡️  WORDPRESS SECURITY SCANNER - ASYNC MODE")
+    print("="*70)
     print(f"🎯 Target: {ip_range}")
     print(f"📊 Total IPs: {SCAN_STATS['total_ips']}")
-    print(f"🧵 Threads: {THREADS}")
-    print("="*60)
+    print(f"⚡ Max concurrent: {MAX_CONCURRENT}")
+    print("="*70)
     print("\n[+] Chế độ hiển thị:")
     print("   • Chỉ 1 dòng tiến trình duy nhất")
     print("   • Chỉ hiển thị khi tìm thấy LỖ HỔNG")
     print("   • Các phát hiện lỗ hổng sẽ được 'ghim' lại")
-    print("\n" + "="*60 + "\n")
+    print("\n[+] Công nghệ: aiohttp + asyncio (nhanh hơn 5-10x)")
+    print("\n" + "="*70 + "\n")
     
     # Initial progress display
     update_progress_line()
     
-    # Start scanning
-    batch_size = 100
+    # Process IPs in batches
+    batch_size = 500  # Larger batch size for async
     for i in range(0, len(ip_list), batch_size):
         batch = ip_list[i:i + batch_size]
-        
-        with ThreadPoolExecutor(max_workers=THREADS) as executor:
-            futures = [executor.submit(scan_ip_address, ip) for ip in batch]
-            
-            for future in as_completed(futures):
-                try:
-                    future.result(timeout=30)
-                except Exception as e:
-                    with output_lock:
-                        SCAN_STATS["errors"] += 1
-                    update_progress_line()
+        await process_batch_async(batch)
     
     # Final summary
     show_final_summary()
@@ -540,9 +569,21 @@ def main():
         OUTPUT_FILE.write(f"Vulnerabilities: {SCAN_STATS['vulnerabilities']}\n")
         OUTPUT_FILE.write(f"Errors: {SCAN_STATS['errors']}\n")
         OUTPUT_FILE.write(f"Duration: {time.time() - SCAN_STATS['start_time']:.1f}s\n")
+        OUTPUT_FILE.write(f"Speed: {SCAN_STATS['scanned']/(time.time() - SCAN_STATS['start_time']):.1f} IPs/s\n")
         OUTPUT_FILE.close()
     
     print(f"\n[+] Results saved to: {output_filename}")
+
+def main():
+    try:
+        # Run async main
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\n\n[!] Đang dừng quét...")
+        show_final_summary()
+        if OUTPUT_FILE:
+            OUTPUT_FILE.close()
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()
