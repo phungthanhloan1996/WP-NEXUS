@@ -1,0 +1,102 @@
+{
+  "target": "https://dolphin-vc.com",
+  "timestamp": "2026-01-14T10:54:25.799827",
+  "summary": {
+    "critical": 7,
+    "high": 3,
+    "medium": 0,
+    "low": 0,
+    "info": 0
+  },
+  "plugins": {},
+  "accessible_files": [
+    [
+      "/wp-config.php",
+      "https://dolphin-vc.com/wp-config.php"
+    ]
+  ],
+  "detailed_findings": {
+    "critical": [
+      {
+        "title": "EOL PHP 7.4.33 - CVE-2022-37454",
+        "description": "Buffer overflow in mb_decode_numericentity (CVSS 9.8)",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:20.849218",
+        "recommendation": "Upgrade to PHP 8.2+ immediately - PHP 7.4 EOL since 2022"
+      },
+      {
+        "title": "EOL PHP 7.4.33 - CVE-2022-31630",
+        "description": "Use-after-free in Phar extension (CVSS 7.5)",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:20.849325",
+        "recommendation": "Upgrade to PHP 8.2+ immediately - PHP 7.4 EOL since 2022"
+      },
+      {
+        "title": "EOL PHP 7.4.33 - CVE-2022-31629",
+        "description": "XSS in phpinfo() (CVSS 6.1)",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:20.849403",
+        "recommendation": "Upgrade to PHP 8.2+ immediately - PHP 7.4 EOL since 2022"
+      },
+      {
+        "title": "phpinfo page publicly accessible",
+        "description": "https://dolphin-vc.com/phpinfo.php",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:20.877698",
+        "recommendation": "Delete all phpinfo/test/info files immediately"
+      },
+      {
+        "title": "disable_functions is empty",
+        "description": "",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:20.882523",
+        "recommendation": "Set disable_functions = system,exec,passthru,shell_exec,popen,proc_open,eval,assert,pcntl_exec"
+      },
+      {
+        "title": "allow_url_fopen = On",
+        "description": "",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:20.884189",
+        "recommendation": "Set allow_url_fopen = Off to prevent RFI attacks"
+      },
+      {
+        "title": "REST API user enumeration possible",
+        "description": [
+          "dolphinad",
+          "dolphinvc",
+          "huyendt0",
+          "dolphinhr"
+        ],
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:23.777583",
+        "recommendation": "Disable user enumeration via REST (add filter or plugin)"
+      }
+    ],
+    "high": [
+      {
+        "title": "PHP version disclosure in headers",
+        "description": "PHP/7.4.33",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:20.849056",
+        "recommendation": "Remove or mask X-Powered-By header in server config"
+      },
+      {
+        "title": "REST API exposes data: /wp-json/wp/v2/posts",
+        "description": "Items: 10",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:23.959727",
+        "recommendation": null
+      },
+      {
+        "title": "REST API exposes data: /wp-json/wp/v2/pages",
+        "description": "Items: 10",
+        "evidence": null,
+        "timestamp": "2026-01-14T10:54:24.120864",
+        "recommendation": null
+      }
+    ],
+    "medium": [],
+    "low": [],
+    "info": []
+  }
+}

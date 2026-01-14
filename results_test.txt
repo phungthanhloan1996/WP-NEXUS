@@ -1,0 +1,456 @@
+================================================================================
+WORDPRESS VULNERABILITY SCAN - ENHANCED EDITION
+Generated: 2026-01-14 17:55:19
+================================================================================
+
+
+================================================================================
+DOMAIN: study1.io
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.21s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: www.thejoyoffashion.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 3.74s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: health.co
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.66s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: caibao102.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.26s
+WordPress: Yes
+WP URL: https://caibao102.business.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: news.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.10s
+WordPress: Yes
+WP URL: https://www.cnet.com/news/
+Detection Reason: wordpress_text_wp_admin
+================================================================================
+
+================================================================================
+DOMAIN: www.caibao100.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.85s
+WordPress: Yes
+WP URL: https://caibao100.business.blog/
+Detection Reason: meta_generator_homepage_http
+================================================================================
+
+================================================================================
+DOMAIN: news-news.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.48s
+WordPress: Yes
+WP URL: https://news-news.com
+Detection Reason: url_structure_wp_admin
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.sky.tech.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.14s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in/id?redirect_to=https://skydottechdotblog.wordpress.com
+Detection Reason: meta_content_wp_login
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.djl.music.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 3.16s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in?redirect_to=https://djlmusicblog.wordpress.com
+Detection Reason: meta_content_wp_admin
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: laurenann.health.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 404
+Response Time: 1.16s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in?redirect_to=https://laurenannhealth.wordpress.com
+Detection Reason: meta_content_wp_login
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: caibao99.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 4.56s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in/zh-cn?redirect_to=https://caibao99business.wordpress.com
+Detection Reason: meta_content_wp_admin
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: edu-edu.net
+----------------------------------------
+Alive: Yes
+HTTP Status: 403
+Response Time: 0.20s
+WordPress: Yes
+WP URL: https://edu-edu.net
+Detection Reason: url_structure_wp_json
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: medical.co
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.46s
+WordPress: Yes
+WP URL: http://medical.co
+Detection Reason: url_structure_wp_json_http
+
+🔍 PLUGINS (3):
+  • wp-file-manager
+  • revslider
+  • duplicator [SUSP: dup-installer]
+
+⚠️ VULNERABILITIES (1):
+  • duplicator: dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.3dspeco.school.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.59s
+WordPress: Yes
+WP URL: https://3dspeco.school.blog/feed/
+Detection Reason: link_header_feed
+
+🔍 PLUGINS (3):
+  • wp-file-manager
+  • revslider
+  • duplicator [SUSP: dup-installer]
+
+⚠️ VULNERABILITIES (1):
+  • duplicator: dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: blog.org
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.98s
+WordPress: Yes
+WP URL: https://blog.org
+Detection Reason: wp_includes_url_wp_admin
+================================================================================
+
+================================================================================
+DOMAIN: blog20.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.61s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: market1.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.11s
+WordPress: Yes
+WP URL: http://market1.com
+Detection Reason: url_structure_wp_json_http
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: thesouladventurer.travel.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.37s
+WordPress: Yes
+WP URL: https://thesouladventurer.travel.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: shop.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 403
+Response Time: 1.73s
+WordPress: Yes
+WP URL: https://www.shop.com
+Detection Reason: url_structure_wp_json_http
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.test2bibbazarmetropole.art.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 410
+Response Time: 2.43s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: stephyjay.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.47s
+WordPress: Yes
+WP URL: https://stephyjay.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: portal50.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.49s
+WordPress: Yes
+WP URL: http://portal50.com
+Detection Reason: url_structure_wp_json_http
+
+🔍 PLUGINS (3):
+  • wp-file-manager
+  • revslider
+  • duplicator [SUSP: dup-installer]
+
+⚠️ VULNERABILITIES (1):
+  • duplicator: dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: tour.co
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.05s
+WordPress: Yes
+WP URL: http://tour.co
+Detection Reason: url_structure_wp_json_http
+================================================================================
+
+================================================================================
+DOMAIN: shop.net
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.36s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: news.net
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.04s
+WordPress: Yes
+WP URL: https://news.net
+Detection Reason: link_header_wp_json
+================================================================================
+
+================================================================================
+DOMAIN: www.amayayam.travel.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.84s
+WordPress: Yes
+WP URL: https://amayayam.travel.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: koraybek.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.02s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in?redirect_to=https://koraybek.wordpress.com
+Detection Reason: meta_content_wp_login
+
+🔍 PLUGINS (3):
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • wp-file-manager: elfinder.php, upload.php
+  • revslider: revslider.php, showbiz.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.modasjoniona.fashion.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 410
+Response Time: 5.80s
+WordPress: No
+================================================================================
+
+
+================================================================================
+DETAILED SCAN SUMMARY
+================================================================================
+
+📊 DOMAIN STATISTICS:
+  • Total Domains: 187
+  • Domains Alive: 28 (15.0%)
+  • Domains Dead: 45 (24.1%)
+
+🅆🄿 WORDPRESS DETECTION:
+  • WP Detected: 21 (75.0% of alive)
+  • WP Not Detected: 7
+  • Estimated False Negatives: 7 (100.0%)
+
+🔍 FINDINGS:
+  • Plugins Found: 36
+  • Vulnerabilities Found: 30
+
+⚡ PERFORMANCE:
+  • Total Requests: 5072
+  • Requests/Minute: 1597.0
+  • Domains/Second: 0.38
+  • Total Time: 190.6s
+  • Rate Limited: 0 times
+
+🚨 VULNERABLE SITES (12):
+----------------------------------------
+  • news-news.com - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • www.sky.tech.blog - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • www.djl.music.blog - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • laurenann.health.blog - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • caibao99.business.blog - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • edu-edu.net - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • medical.co - 1 vulns - duplicator: dup-installer...
+  • www.3dspeco.school.blog - 1 vulns - duplicator: dup-installer...
+  • market1.com - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • shop.com - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+  • portal50.com - 1 vulns - duplicator: dup-installer...
+  • koraybek.blog - 3 vulns - wp-file-manager: elfinder.php, upload.php...
+
+================================================================================

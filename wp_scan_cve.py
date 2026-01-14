@@ -142,20 +142,47 @@ class FullWPSecurityAudit:
         content = r.text
         slugs = set(re.findall(r'wp-content/plugins/([a-z0-9][a-z0-9\-_]{1,80})/', content))
 
+        # ===== RECON CỨNG: wp-file-manager (KHÔNG PHỤ THUỘC HTML) =====
+        fm_readme = urljoin(self.target + '/', 'wp-content/plugins/wp-file-manager/readme.txt')
+        fm_resp = self.safe_get(fm_readme)
+
+        if fm_resp and fm_resp.status_code == 200 and 'wp file manager' in fm_resp.text.lower():
+            version = "Unknown"
+            m = re.search(r'Stable tag:\s*([0-9\.]+)', fm_resp.text, re.I)
+            if m:
+                version = m.group(1)
+
+            self.plugins['wp-file-manager'] = version
+
+            self.add_finding(
+                'critical',
+                f"Vulnerable plugin detected: wp-file-manager (v{version})",
+                "Known RCE: CVE-2020-25213 (unauthenticated file upload)",
+                recommendation="Remove plugin or update immediately to >= 6.9"
+            )
+
+            slugs.add('wp-file-manager')
+        # ============================================================
+
         self.log('INFO', f"Detected {len(slugs)} potential plugins")
 
         for slug in sorted(slugs):
-            version = "Unknown"
-            for file_name in ["readme.txt", "changelog.txt", "style.css", "readme.md"]:
-                url = urljoin(self.target + '/', f'wp-content/plugins/{slug}/{file_name}')
-                rv = self.safe_get(url)
-                if rv and rv.status_code == 200:
-                    match = re.search(r'(?:Stable tag|Version|Plugin Version):\s*([0-9][\d\.\-a-z+]+)', rv.text, re.I)
-                    if match:
-                        version = match.group(1).strip()
-                        break
+            version = self.plugins.get(slug, "Unknown")
 
-            self.plugins[slug] = version
+            if version == "Unknown":
+                for file_name in ["readme.txt", "changelog.txt", "style.css", "readme.md"]:
+                    url = urljoin(self.target + '/', f'wp-content/plugins/{slug}/{file_name}')
+                    rv = self.safe_get(url)
+                    if rv and rv.status_code == 200:
+                        match = re.search(
+                            r'(?:Stable tag|Version|Plugin Version):\s*([0-9][\d\.\-a-z+]+)',
+                            rv.text, re.I
+                        )
+                        if match:
+                            version = match.group(1).strip()
+                            break
+
+                self.plugins[slug] = version
 
             # Check CVE
             if slug in KNOWN_PLUGIN_CVES:
@@ -163,10 +190,12 @@ class FullWPSecurityAudit:
                 max_safe = info["max_safe"]
                 cves_str = ", ".join(info["cves"])
                 if version == "Unknown" or (max_safe and version <= max_safe):
-                    self.add_finding('critical',
-                                     f"Vulnerable plugin detected: {slug} (v{version})",
-                                     f"Known CVEs: {cves_str}",
-                                     recommendation=f"Update immediately to > {max_safe or 'latest version'}")
+                    self.add_finding(
+                        'critical',
+                        f"Vulnerable plugin detected: {slug} (v{version})",
+                        f"Known CVEs: {cves_str}",
+                        recommendation=f"Update immediately to > {max_safe or 'latest version'}"
+                    )
 
             print(f"  • {slug.ljust(45)} → v{version}")
 
@@ -183,8 +212,12 @@ class FullWPSecurityAudit:
             r = self.safe_head(url)
             if r and r.status_code == 200:
                 self.accessible_files.append((path, url))
-                self.log('CRITICAL', f"Sensitive file accessible: {path}")
-
+                self.add_finding(
+                    'critical',
+                    f"Sensitive file accessible: {path}",
+                    url,
+                    recommendation="Block access via server config (.htaccess / nginx) immediately"
+                )
                 if any(kw in path.lower() for kw in ['wp-config', '.env', 'backup', 'sql']):
                     gr = self.safe_get(url)
                     if gr and ('DB_' in gr.text or 'password' in gr.text.lower()):

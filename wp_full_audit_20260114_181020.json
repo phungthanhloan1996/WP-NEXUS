@@ -1,0 +1,220 @@
+{
+  "target": "https://market1.com",
+  "timestamp": "2026-01-14T11:10:20.901572",
+  "summary": {
+    "critical": 18,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 0
+  },
+  "plugins": {},
+  "accessible_files": [
+    [
+      "/wp-config.php",
+      "https://market1.com/wp-config.php"
+    ],
+    [
+      "/.env",
+      "https://market1.com/.env"
+    ],
+    [
+      "/.env.local",
+      "https://market1.com/.env.local"
+    ],
+    [
+      "/wp-config.php.bak",
+      "https://market1.com/wp-config.php.bak"
+    ],
+    [
+      "/wp-config.php.old",
+      "https://market1.com/wp-config.php.old"
+    ],
+    [
+      "/wp-config.php.save",
+      "https://market1.com/wp-config.php.save"
+    ],
+    [
+      "/wp-config.php.backup",
+      "https://market1.com/wp-config.php.backup"
+    ],
+    [
+      "/backup.zip",
+      "https://market1.com/backup.zip"
+    ],
+    [
+      "/backup.tar.gz",
+      "https://market1.com/backup.tar.gz"
+    ],
+    [
+      "/database.sql",
+      "https://market1.com/database.sql"
+    ],
+    [
+      "/backup.sql",
+      "https://market1.com/backup.sql"
+    ],
+    [
+      "/error_log",
+      "https://market1.com/error_log"
+    ],
+    [
+      "/debug.log",
+      "https://market1.com/debug.log"
+    ],
+    [
+      "/wp-content/debug.log",
+      "https://market1.com/wp-content/debug.log"
+    ],
+    [
+      "/wp-content/error_log",
+      "https://market1.com/wp-content/error_log"
+    ],
+    [
+      "/.git/config",
+      "https://market1.com/.git/config"
+    ],
+    [
+      "/.git/HEAD",
+      "https://market1.com/.git/HEAD"
+    ],
+    [
+      "/.gitignore",
+      "https://market1.com/.gitignore"
+    ]
+  ],
+  "detailed_findings": {
+    "critical": [
+      {
+        "title": "Sensitive file accessible: /wp-config.php",
+        "description": "https://market1.com/wp-config.php",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:10.019202",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /.env",
+        "description": "https://market1.com/.env",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:10.620304",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /.env.local",
+        "description": "https://market1.com/.env.local",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:11.219636",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /wp-config.php.bak",
+        "description": "https://market1.com/wp-config.php.bak",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:11.818965",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /wp-config.php.old",
+        "description": "https://market1.com/wp-config.php.old",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:12.422265",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /wp-config.php.save",
+        "description": "https://market1.com/wp-config.php.save",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:13.022774",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /wp-config.php.backup",
+        "description": "https://market1.com/wp-config.php.backup",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:13.635888",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /backup.zip",
+        "description": "https://market1.com/backup.zip",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:14.249609",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /backup.tar.gz",
+        "description": "https://market1.com/backup.tar.gz",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:14.850510",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /database.sql",
+        "description": "https://market1.com/database.sql",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:15.452454",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /backup.sql",
+        "description": "https://market1.com/backup.sql",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:16.053736",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /error_log",
+        "description": "https://market1.com/error_log",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:16.652777",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /debug.log",
+        "description": "https://market1.com/debug.log",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:16.954882",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /wp-content/debug.log",
+        "description": "https://market1.com/wp-content/debug.log",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:17.255287",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /wp-content/error_log",
+        "description": "https://market1.com/wp-content/error_log",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:17.555630",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /.git/config",
+        "description": "https://market1.com/.git/config",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:17.859199",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /.git/HEAD",
+        "description": "https://market1.com/.git/HEAD",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:18.166469",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      },
+      {
+        "title": "Sensitive file accessible: /.gitignore",
+        "description": "https://market1.com/.gitignore",
+        "evidence": null,
+        "timestamp": "2026-01-14T11:10:18.473708",
+        "recommendation": "Block access via server config (.htaccess / nginx) immediately"
+      }
+    ],
+    "high": [],
+    "medium": [],
+    "low": [],
+    "info": []
+  }
+}
