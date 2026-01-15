@@ -1,348 +1,680 @@
 #!/usr/bin/env python3
 """
-WordPress/PHP Security Audit FULL - Passive + CVE + Plugin Focus (2026)
-Kết hợp đầy đủ từ hai script gốc, không brute force, chỉ kiểm tra thụ động + config vuln
+WordPress/PHP Security Audit - Behavioral Observation Edition (2026)
+Static Posture Assessment + Dynamic Server Response Observation
+Language tuned for professional pentest reports
 """
 
 import requests
 import sys
 import re
 import json
-from urllib.parse import urljoin, quote
+import time
+from urllib.parse import urljoin, quote, urlparse
 from datetime import datetime
 from colorama import init, Fore, Style
 
 init(autoreset=True)
 
-# Danh sách CVE plugin phổ biến (cập nhật đến 2026)
-KNOWN_PLUGIN_CVES = {
-    "wp-automatic": {"max_safe": "3.92.3", "cves": ["CVE-2025-2563 (9.8 RCE)"]},
-    "essential-addons-for-elementor-lite": {"max_safe": "5.9.21", "cves": ["CVE-2025-1034 (9.8)"]},
-    "the-plus-addons-for-elementor-page-builder": {"max_safe": "5.6.1", "cves": ["CVE-2025-1062 (9.8)"]},
-    "ti-woocommerce-wishlist": {"max_safe": "2.5.1", "cves": ["CVE-2025-47577 (10.0)"]},
-    "revslider": {"max_safe": "6.7.5", "cves": ["Multiple pre-6.7 RCE"]},
-    "layer-slider": {"max_safe": "7.10.0", "cves": ["Older versions - Arbitrary File Upload"]},
-    "contact-form-7": {"max_safe": "5.9", "cves": ["Pre-5.9 - XSS/CSRF"]},
-    "wp-file-manager": {"max_safe": "6.9", "cves": ["CVE-2020-25213 (9.8 RCE)"]},
-}
-
-class FullWPSecurityAudit:
+# ===============================
+# BEHAVIORAL OBSERVATION MODELS
+# ===============================
+class ServerBehaviorObserver:
+    """Observe and document server behaviors vs expected patterns"""
+    
     def __init__(self, target_url):
         self.target = target_url.rstrip('/')
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Security Audit Tool - Passive Scan 2026)'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
-        self.results = {
-            'critical': [], 'high': [], 'medium': [], 'low': [], 'info': []
-        }
-        self.plugins = {}
-        self.accessible_files = []
-
-    def log(self, status, message, detail=""):
-        colors = {
-            "CRITICAL": Fore.RED + Style.BRIGHT,
-            "HIGH": Fore.YELLOW,
-            "MEDIUM": Fore.CYAN,
-            "LOW": Fore.GREEN,
-            "INFO": Fore.BLUE,
-            "SUCCESS": Fore.GREEN
-        }
-        print(f"{colors.get(status, Fore.WHITE)}[{status}] {message}")
-        if detail:
-            print(f"   → {detail[:200]}{'...' if len(detail) > 200 else ''}")
-
-    def safe_get(self, url, timeout=10):
-        try:
-            return self.session.get(url, timeout=timeout, allow_redirects=True)
-        except:
-            return None
-
-    def safe_head(self, url):
-        try:
-            return self.session.head(url, timeout=6)
-        except:
-            return None
-
-    def add_finding(self, level, title, description, evidence=None, recommendation=None):
-        entry = {
-            'title': title,
-            'description': description,
-            'evidence': evidence,
-            'timestamp': datetime.utcnow().isoformat(),
-            'recommendation': recommendation
-        }
-        self.results[level].append(entry)
-        self.log(level, title, evidence)
-
-    # ================= CHECKS =================
-
-    def check_headers_and_php_version_cves(self):
-        r = self.safe_get(self.target)
-        if not r:
-            return
-
-        if 'X-Powered-By' in r.headers and 'PHP' in r.headers['X-Powered-By']:
-            header = r.headers['X-Powered-By']
-            version_match = re.search(r'PHP/([\d\.]+)', header)
-            if version_match:
-                ver = version_match.group(1)
-                self.add_finding('high', "PHP version disclosure in headers", header,
-                                 recommendation="Remove or mask X-Powered-By header in server config")
-                self._check_php_cves(ver)
-
-        if 'Server' in r.headers and 'PHP' in r.headers['Server']:
-            self.add_finding('medium', "Server header leaks PHP info", r.headers['Server'],
-                             recommendation="Minimize Server header information")
-
-    def _check_php_cves(self, version):
-        if version.startswith(('7.4', '7.3', '7.2')):
-            cves = [
-                ("CVE-2022-37454", "9.8", "Buffer overflow in mb_decode_numericentity"),
-                ("CVE-2022-31630", "7.5", "Use-after-free in Phar extension"),
-                ("CVE-2022-31629", "6.1", "XSS in phpinfo()"),
-            ]
-            for cve, score, desc in cves:
-                self.add_finding('critical', f"EOL PHP {version} - {cve}", f"{desc} (CVSS {score})",
-                                 recommendation="Upgrade to PHP 8.2+ immediately - PHP 7.4 EOL since 2022")
-
-    def check_phpinfo_and_dangerous_configs(self):
-        paths = ['/phpinfo.php', '/info.php', '/test.php', '/?phpinfo=1', '/server-info']
-        for path in paths:
-            url = urljoin(self.target + '/', path)
-            r = self.safe_get(url)
-            if r and r.status_code == 200 and 'phpinfo' in r.text.lower():
-                self.add_finding('critical', "phpinfo page publicly accessible", url,
-                                 recommendation="Delete all phpinfo/test/info files immediately")
-
-                text = r.text.lower()
-
-                # disable_functions
-                if re.search(r'disable_functions\s*</td><td[^>]*>(no value|\s*)', text, re.I):
-                    self.add_finding('critical', "disable_functions is empty", "",
-                                     recommendation="Set disable_functions = system,exec,passthru,shell_exec,popen,proc_open,eval,assert,pcntl_exec")
-
-                # allow_url_fopen
-                if re.search(r'allow_url_fopen\s*</td><td[^>]*>on', text, re.I):
-                    self.add_finding('critical', "allow_url_fopen = On", "",
-                                     recommendation="Set allow_url_fopen = Off to prevent RFI attacks")
-
-                # open_basedir
-                if re.search(r'open_basedir\s*</td><td[^>]*>(no value|\s*none\s*)', text, re.I):
-                    self.add_finding('high', "No open_basedir restriction", "",
-                                     recommendation="Set open_basedir to your web root directory")
-
-                break
-
-    def detect_plugins_versions_and_cves(self):
-        r = self.safe_get(self.target)
-        if not r:
-            return
-
-        content = r.text
-        slugs = set(re.findall(r'wp-content/plugins/([a-z0-9][a-z0-9\-_]{1,80})/', content))
-
-        # ===== RECON CỨNG: wp-file-manager (KHÔNG PHỤ THUỘC HTML) =====
-        fm_readme = urljoin(self.target + '/', 'wp-content/plugins/wp-file-manager/readme.txt')
-        fm_resp = self.safe_get(fm_readme)
-
-        if fm_resp and fm_resp.status_code == 200 and 'wp file manager' in fm_resp.text.lower():
-            version = "Unknown"
-            m = re.search(r'Stable tag:\s*([0-9\.]+)', fm_resp.text, re.I)
-            if m:
-                version = m.group(1)
-
-            self.plugins['wp-file-manager'] = version
-
-            self.add_finding(
-                'critical',
-                f"Vulnerable plugin detected: wp-file-manager (v{version})",
-                "Known RCE: CVE-2020-25213 (unauthenticated file upload)",
-                recommendation="Remove plugin or update immediately to >= 6.9"
-            )
-
-            slugs.add('wp-file-manager')
-        # ============================================================
-
-        self.log('INFO', f"Detected {len(slugs)} potential plugins")
-
-        for slug in sorted(slugs):
-            version = self.plugins.get(slug, "Unknown")
-
-            if version == "Unknown":
-                for file_name in ["readme.txt", "changelog.txt", "style.css", "readme.md"]:
-                    url = urljoin(self.target + '/', f'wp-content/plugins/{slug}/{file_name}')
-                    rv = self.safe_get(url)
-                    if rv and rv.status_code == 200:
-                        match = re.search(
-                            r'(?:Stable tag|Version|Plugin Version):\s*([0-9][\d\.\-a-z+]+)',
-                            rv.text, re.I
-                        )
-                        if match:
-                            version = match.group(1).strip()
-                            break
-
-                self.plugins[slug] = version
-
-            # Check CVE
-            if slug in KNOWN_PLUGIN_CVES:
-                info = KNOWN_PLUGIN_CVES[slug]
-                max_safe = info["max_safe"]
-                cves_str = ", ".join(info["cves"])
-                if version == "Unknown" or (max_safe and version <= max_safe):
-                    self.add_finding(
-                        'critical',
-                        f"Vulnerable plugin detected: {slug} (v{version})",
-                        f"Known CVEs: {cves_str}",
-                        recommendation=f"Update immediately to > {max_safe or 'latest version'}"
-                    )
-
-            print(f"  • {slug.ljust(45)} → v{version}")
-
-    def check_sensitive_files_and_backups(self):
-        files = [
-            "/wp-config.php", "/.env", "/.env.local", "/wp-config.php.bak", "/wp-config.php.old",
-            "/wp-config.php.save", "/wp-config.php.backup", "/backup.zip", "/backup.tar.gz",
-            "/database.sql", "/backup.sql", "/error_log", "/debug.log", "/wp-content/debug.log",
-            "/wp-content/error_log", "/.git/config", "/.git/HEAD", "/.gitignore"
-        ]
-
-        for path in files:
-            url = urljoin(self.target + '/', path)
-            r = self.safe_head(url)
-            if r and r.status_code == 200:
-                self.accessible_files.append((path, url))
-                self.add_finding(
-                    'critical',
-                    f"Sensitive file accessible: {path}",
-                    url,
-                    recommendation="Block access via server config (.htaccess / nginx) immediately"
+        self.baseline_profile = {}
+    
+    def observe_rate_handling(self):
+        """Observe server response patterns under sequential requests"""
+        endpoint = urljoin(self.target, '/wp-login.php')
+        observations = []
+        
+        for i in range(5):
+            try:
+                start = time.time()
+                r = self.session.post(
+                    endpoint, 
+                    data={'log': f'obs_test_{i}', 'pwd': 'observation_test'},
+                    timeout=8,
+                    allow_redirects=True
                 )
-                if any(kw in path.lower() for kw in ['wp-config', '.env', 'backup', 'sql']):
-                    gr = self.safe_get(url)
-                    if gr and ('DB_' in gr.text or 'password' in gr.text.lower()):
-                        self.add_finding('critical', f"{path} contains credentials or DB info", url,
-                                         recommendation="Block access immediately, change passwords if leaked")
-
-    def check_rest_api_information_leaks(self):
-        endpoints = [
-            "/wp-json/wp/v2/users",
-            "/wp-json/wp/v2/posts",
-            "/wp-json/wp/v2/pages",
-            "/wp-json/wp/v2/comments"
+                elapsed = time.time() - start
+                
+                observations.append({
+                    'request': i+1,
+                    'status': r.status_code,
+                    'time': round(elapsed, 3),
+                    'length': len(r.text),
+                    'redirected': len(r.history) > 0,
+                    'final_location': r.url if r.history else None
+                })
+                
+                # Baseline comparison
+                if i == 0:
+                    self.baseline_profile['initial_response_time'] = elapsed
+                    self.baseline_profile['initial_status'] = r.status_code
+                
+                time.sleep(0.8)  # Conservative delay
+                
+            except Exception as e:
+                observations.append({
+                    'request': i+1,
+                    'error': str(e)[:100],
+                    'timeout': isinstance(e, requests.exceptions.Timeout)
+                })
+        
+        # Analyze patterns (not conclusions)
+        times = [obs.get('time', 0) for obs in observations if 'time' in obs]
+        if len(times) >= 3:
+            time_increase = all(times[i] <= times[i+1] for i in range(len(times)-1))
+            max_time = max(times) if times else 0
+        else:
+            time_increase = False
+            max_time = 0
+        
+        return {
+            'sequential_requests': observations,
+            'pattern_analysis': {
+                'response_times_consistent': len(set(round(t, 2) for t in times)) <= 2 if times else None,
+                'gradual_slowdown_observed': time_increase and max_time > 1.5,
+                'all_requests_succeeded': all('status' in obs and obs['status'] < 500 for obs in observations)
+            },
+            'baseline': self.baseline_profile
+        }
+    
+    def observe_error_response_patterns(self):
+        """Observe how server responds to non-standard inputs"""
+        test_cases = [
+            {
+                'path': '/wp-content/plugins/nonexistent-plugin-observation/readme.txt',
+                'type': 'non-existent_plugin_path',
+                'description': 'Access attempt to non-existent plugin directory'
+            },
+            {
+                'path': f'/?test_param={quote("../../../observation-test")}',
+                'type': 'directory_traversal_pattern',
+                'description': 'Parameter containing directory traversal pattern'
+            },
+            {
+                'path': '/wp-admin/admin-ajax.php?action=non_existent_action_obs',
+                'type': 'invalid_ajax_action',
+                'description': 'Invalid AJAX action parameter'
+            },
+            {
+                'path': '/?s=' + 'a' * 200,
+                'type': 'extended_search_query',
+                'description': 'Extended length search parameter'
+            }
         ]
+        
+        observations = []
+        baseline_response = None
+        
+        # First get baseline normal response
+        try:
+            baseline = self.session.get(self.target, timeout=10)
+            baseline_response = {
+                'status': baseline.status_code,
+                'length': len(baseline.text),
+                'content_type': baseline.headers.get('Content-Type', ''),
+                'has_login_form': 'password' in baseline.text.lower() and 'input' in baseline.text.lower()
+            }
+        except:
+            pass
+        
+        for test in test_cases:
+            url = urljoin(self.target, test['path'])
+            try:
+                r = self.session.get(url, timeout=12, allow_redirects=False)
+                
+                # Compare with baseline
+                length_deviation = None
+                if baseline_response:
+                    baseline_len = baseline_response['length']
+                    current_len = len(r.text)
+                    if baseline_len > 0:
+                        length_deviation = round(abs(current_len - baseline_len) / baseline_len * 100, 1)
+                
+                # Content analysis (not exploitation)
+                content_analysis = {
+                    'contains_technical_errors': any(
+                        pattern in r.text.lower() 
+                        for pattern in ['stack trace', 'fatal error', 'exception:', 'warning:', 'notice:']
+                    ),
+                    'contains_path_disclosure': any(
+                        pattern in r.text 
+                        for pattern in ['/var/www/', '/home/', 'C:\\', 'D:\\', '/etc/']
+                    ),
+                    'contains_database_references': any(
+                        pattern in r.text.lower() 
+                        for pattern in ['mysql', 'mysqli', 'pdo', 'database', 'sqlite']
+                    ),
+                    'is_default_fallback': len(r.text) > 1000 and '</html>' in r.text and '</body>' in r.text
+                }
+                
+                observations.append({
+                    'test_type': test['type'],
+                    'description': test['description'],
+                    'url': url,
+                    'status': r.status_code,
+                    'response_length': len(r.text),
+                    'length_deviation_percent': length_deviation,
+                    'content_type': r.headers.get('Content-Type', ''),
+                    'differs_from_baseline': length_deviation and abs(length_deviation) > 50,
+                    'content_analysis': content_analysis,
+                    'observed_behaviors': self._extract_observed_behaviors(r, content_analysis)
+                })
+                
+            except requests.exceptions.Timeout:
+                observations.append({
+                    'test_type': test['type'],
+                    'description': test['description'],
+                    'behavior': 'REQUEST_TIMEOUT',
+                    'note': 'Server delayed response beyond 12-second threshold'
+                })
+            except Exception as e:
+                observations.append({
+                    'test_type': test['type'],
+                    'description': test['description'],
+                    'error': str(e)[:80]
+                })
+            
+            time.sleep(1.2)  # Respectful delay
+        
+        return {
+            'baseline_response': baseline_response,
+            'test_observations': observations,
+            'summary': self._summarize_error_behaviors(observations)
+        }
+    
+    def _extract_observed_behaviors(self, response, content_analysis):
+        """Extract behavioral observations without making vulnerability claims"""
+        behaviors = []
+        
+        if response.status_code == 200:
+            if content_analysis['contains_technical_errors']:
+                behaviors.append('TECHNICAL_ERRORS_IN_RESPONSE')
+            if content_analysis['contains_path_disclosure']:
+                behaviors.append('PATH_INFO_IN_RESPONSE')
+            if content_analysis['contains_database_references']:
+                behaviors.append('DATABASE_REFERENCES_IN_RESPONSE')
+            if content_analysis['is_default_fallback']:
+                behaviors.append('DEFAULT_FALLBACK_RENDERING')
+            if len(response.text) < 500:
+                behaviors.append('MINIMAL_RESPONSE')
+        
+        elif response.status_code == 404:
+            if len(response.text) > 5000:
+                behaviors.append('VERBOSE_404_RESPONSE')
+            if 'wp-' in response.text.lower():
+                behaviors.append('WORDPRESS_SIGNATURE_IN_404')
+        
+        elif response.status_code == 403:
+            behaviors.append('ACCESS_DENIED')
+            if 'forbidden' in response.text.lower():
+                behaviors.append('EXPLICIT_FORBIDDEN_MESSAGE')
+        
+        elif response.status_code >= 500:
+            behaviors.append('SERVER_ERROR_RESPONSE')
+            if 'error' in response.text.lower()[:200]:
+                behaviors.append('ERROR_MESSAGE_PRESENT')
+        
+        return behaviors
+    
+    def _summarize_error_behaviors(self, observations):
+        """Create behavioral summary without conclusions"""
+        summary = {
+            'tests_completed': len([o for o in observations if 'status' in o or 'behavior' in o]),
+            'status_200_responses': len([o for o in observations if o.get('status') == 200]),
+            'timeout_occurrences': len([o for o in observations if o.get('behavior') == 'REQUEST_TIMEOUT']),
+            'technical_errors_observed': 0,
+            'path_disclosures_observed': 0
+        }
+        
+        for obs in observations:
+            if 'content_analysis' in obs:
+                ca = obs['content_analysis']
+                if ca.get('contains_technical_errors'):
+                    summary['technical_errors_observed'] += 1
+                if ca.get('contains_path_disclosure'):
+                    summary['path_disclosures_observed'] += 1
+        
+        return summary
+    
+    def observe_authentication_boundaries(self):
+        """Observe access patterns to protected areas"""
+        paths_to_observe = [
+            {'path': '/wp-admin/', 'expected_protection': True, 'description': 'Administration dashboard'},
+            {'path': '/wp-admin/users.php', 'expected_protection': True, 'description': 'User management'},
+            {'path': '/wp-admin/options-general.php', 'expected_protection': True, 'description': 'Settings'},
+            {'path': '/wp-login.php', 'expected_protection': False, 'description': 'Login page'},
+            {'path': '/wp-content/uploads/', 'expected_protection': False, 'description': 'Uploads directory'}
+        ]
+        
+        observations = []
+        
+        for item in paths_to_observe:
+            url = urljoin(self.target, item['path'])
+            try:
+                r = self.session.get(url, timeout=10, allow_redirects=True)
+                
+                redirect_chain = []
+                if r.history:
+                    redirect_chain = [{
+                        'status': hist.status_code,
+                        'url': hist.url,
+                        'location': hist.headers.get('Location', '')
+                    } for hist in r.history]
+                
+                observation = {
+                    'path': item['path'],
+                    'description': item['description'],
+                    'expected_protection': item['expected_protection'],
+                    'final_status': r.status_code,
+                    'final_url': r.url,
+                    'redirects_occurred': len(r.history) > 0,
+                    'redirect_chain': redirect_chain if redirect_chain else None,
+                    'response_length': len(r.text),
+                    'content_type': r.headers.get('Content-Type', ''),
+                    'observed_access_level': self._determine_access_level(r, item['expected_protection'])
+                }
+                
+                observations.append(observation)
+                
+            except Exception as e:
+                observations.append({
+                    'path': item['path'],
+                    'description': item['description'],
+                    'error': str(e)[:80],
+                    'expected_protection': item['expected_protection']
+                })
+            
+            time.sleep(1.0)
+        
+        return {
+            'path_observations': observations,
+            'boundary_analysis': self._analyze_boundaries(observations)
+        }
+    
+    def _determine_access_level(self, response, expected_protection):
+        """Determine observed access level without authentication"""
+        if response.status_code == 200:
+            content = response.text.lower()
+            if 'wp-admin' in response.url and 'login' not in response.url:
+                if 'password' in content and 'input' in content:
+                    return 'LOGIN_FORM_PRESENTED'
+                else:
+                    return 'POTENTIAL_DIRECT_ACCESS'
+            elif 'wp-login' in response.url:
+                return 'LOGIN_PAGE'
+            else:
+                return 'DIRECT_ACCESS'
+        
+        elif response.status_code in [301, 302, 307, 308]:
+            return 'REDIRECTED'
+        
+        elif response.status_code == 403:
+            return 'ACCESS_DENIED'
+        
+        elif response.status_code == 404:
+            return 'NOT_FOUND'
+        
+        else:
+            return f'STATUS_{response.status_code}'
+    
+    def _analyze_boundaries(self, observations):
+        """Analyze boundary patterns"""
+        analysis = {
+            'admin_paths_without_redirect': 0,
+            'login_forms_observed': 0,
+            'direct_access_cases': 0
+        }
+        
+        for obs in observations:
+            if 'observed_access_level' in obs:
+                access = obs['observed_access_level']
+                if 'wp-admin' in obs.get('path', '') and access == 'POTENTIAL_DIRECT_ACCESS':
+                    analysis['admin_paths_without_redirect'] += 1
+                if access == 'LOGIN_FORM_PRESENTED':
+                    analysis['login_forms_observed'] += 1
+                if access == 'DIRECT_ACCESS':
+                    analysis['direct_access_cases'] += 1
+        
+        return analysis
 
-        for ep in endpoints:
-            url = urljoin(self.target + '/', ep)
-            r = self.safe_get(url)
+# ===============================
+# PROFESSIONAL AUDIT ENGINE
+# ===============================
+class ProfessionalWPAudit:
+    def __init__(self, target_url):
+        self.target = target_url.rstrip('/')
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Professional Security Assessment)'
+        })
+        self.observer = ServerBehaviorObserver(target_url)
+        
+        self.observations = {
+            'posture_indicators': [],
+            'behavioral_patterns': [],
+            'configuration_observations': []
+        }
+        self.static_indicators = {}
+        self.behavioral_data = {}
+        self.reality_context = []  # Context between static indicators and observed behavior
+    
+    def log(self, level, message, context=""):
+        color_map = {
+            'OBSERVATION': Fore.MAGENTA,
+            'INDICATOR': Fore.YELLOW,
+            'CONTEXT': Fore.CYAN,
+            'BEHAVIOR': Fore.BLUE,
+            'SUMMARY': Fore.GREEN,
+            'NOTE': Fore.WHITE
+        }
+        print(f"{color_map.get(level, Fore.WHITE)}[{level}] {message}")
+        if context:
+            print(f"   {context}")
+    
+    # ================= STATIC INDICATORS =================
+    def assess_static_indicators(self):
+        """Collect static posture indicators"""
+        self.log('INDICATOR', 'Collecting static posture indicators')
+        
+        # PHP version indicator
+        try:
+            r = self.session.get(self.target, timeout=12)
+            if r and 'X-Powered-By' in r.headers:
+                php_match = re.search(r'PHP/([\d\.]+)', r.headers['X-Powered-By'])
+                if php_match:
+                    version = php_match.group(1)
+                    self.static_indicators['php_version'] = version
+                    self.static_indicators['php_version_in_header'] = True
+                    
+                    indicator = {
+                        'type': 'SERVER_SOFTWARE_DISCLOSURE',
+                        'severity': 'MEDIUM',
+                        'evidence': f'X-Powered-By: {r.headers["X-Powered-By"]}',
+                        'context': 'PHP version disclosed in response headers',
+                        'recommendation': 'Consider removing or customizing the X-Powered-By header'
+                    }
+                    
+                    # Add version context
+                    if version.startswith(('7.', '5.', '8.0', '8.1')):
+                        indicator['additional_context'] = f'PHP {version} is EOL or approaching EOL'
+                        indicator['severity'] = 'HIGH'
+                    
+                    self.observations['posture_indicators'].append(indicator)
+        except:
+            pass
+        
+        # Directory listing indicator
+        try:
+            uploads_url = urljoin(self.target, '/wp-content/uploads/')
+            r = self.session.get(uploads_url, timeout=10)
             if r and r.status_code == 200:
+                is_listing = 'Index of' in r.text or 'Parent Directory' in r.text
+                if is_listing:
+                    self.static_indicators['directory_listing_enabled'] = True
+                    
+                    self.observations['posture_indicators'].append({
+                        'type': 'DIRECTORY_LISTING_ENABLED',
+                        'severity': 'LOW_TO_MEDIUM',
+                        'evidence': uploads_url,
+                        'context': 'Directory listing enabled on /wp-content/uploads/',
+                        'recommendation': 'Disable directory listing via server configuration'
+                    })
+        except:
+            pass
+        
+        self.log('INDICATOR', f'Collected {len(self.observations["posture_indicators"])} static indicators')
+    
+    # ================= BEHAVIORAL OBSERVATION =================
+    def observe_server_behaviors(self):
+        """Observe dynamic server behaviors"""
+        self.log('BEHAVIOR', 'Beginning behavioral observation phase')
+        
+        # 1. Rate handling observation
+        self.log('OBSERVATION', 'Observing request rate handling patterns...')
+        rate_data = self.observer.observe_rate_handling()
+        self.behavioral_data['rate_handling'] = rate_data
+        
+        # Add behavioral observations
+        pattern = rate_data['pattern_analysis']
+        if not pattern['gradual_slowdown_observed']:
+            self.observations['behavioral_patterns'].append({
+                'type': 'CONSISTENT_RESPONSE_TIMES',
+                'observation': 'Server maintained consistent response times under sequential requests',
+                'data': f"Response times: {[round(t, 2) for t in [obs.get('time', 0) for obs in rate_data['sequential_requests'] if 'time' in obs]]}",
+                'context': 'No rate-limiting behavior observed during light sequential probing'
+            })
+        
+        # 2. Error response observation
+        self.log('OBSERVATION', 'Observing error response patterns...')
+        error_data = self.observer.observe_error_response_patterns()
+        self.behavioral_data['error_responses'] = error_data
+        
+        # Analyze observations
+        summary = error_data['summary']
+        if summary['technical_errors_observed'] > 0:
+            self.observations['behavioral_patterns'].append({
+                'type': 'TECHNICAL_ERRORS_IN_RESPONSES',
+                'observation': f"Server returned technical error details in {summary['technical_errors_observed']} test case(s)",
+                'context': 'Error messages may contain debugging information',
+                'severity_note': 'Information disclosure potential'
+            })
+        
+        # 3. Authentication boundary observation
+        self.log('OBSERVATION', 'Observing authentication boundary behaviors...')
+        auth_data = self.observer.observe_authentication_boundaries()
+        self.behavioral_data['auth_boundaries'] = auth_data
+        
+        # Analyze boundary observations
+        analysis = auth_data['boundary_analysis']
+        if analysis['admin_paths_without_redirect'] > 0:
+            self.observations['behavioral_patterns'].append({
+                'type': 'ADMIN_PATH_ACCESS_PATTERN',
+                'observation': f"{analysis['admin_paths_without_redirect']} admin path(s) returned content without authentication redirect",
+                'context': 'Direct access patterns observed - requires authentication verification',
+                'note': 'May indicate misconfiguration or require session testing'
+            })
+        
+        self.log('BEHAVIOR', f'Recorded {len(self.observations["behavioral_patterns"])} behavioral patterns')
+    
+    # ================= CONTEXTUAL ANALYSIS =================
+    def analyze_observational_context(self):
+        """Provide context between static indicators and observed behaviors"""
+        self.log('CONTEXT', 'Analyzing observational context')
+        
+        # Example: PHP version + error handling context
+        php_version = self.static_indicators.get('php_version')
+        error_summary = self.behavioral_data.get('error_responses', {}).get('summary', {})
+        
+        if php_version and error_summary:
+            context = {
+                'static_indicator': f'PHP {php_version} disclosed in headers',
+                'behavioral_observation': f"Technical errors observed: {error_summary.get('technical_errors_observed', 0)} cases",
+                'contextual_interpretation': 'Version disclosure combined with error details may increase information available to attackers',
+                'practical_consideration': 'While PHP version alone is a posture indicator, combined with error leakage it represents a clearer attack surface'
+            }
+            self.reality_context.append(context)
+        
+        # Directory listing + actual access context
+        if self.static_indicators.get('directory_listing_enabled'):
+            # Check if sensitive content is actually exposed
+            sensitive_paths = ['/wp-config.php', '/.env', '/.htaccess']
+            exposed = []
+            
+            for path in sensitive_paths:
+                url = urljoin(self.target, path)
                 try:
-                    data = r.json()
-                    if ep.endswith('/users') and isinstance(data, list) and data:
-                        users = [u.get('slug', u.get('name', 'N/A')) for u in data[:8]]
-                        self.add_finding('critical', "REST API user enumeration possible", users,
-                                         recommendation="Disable user enumeration via REST (add filter or plugin)")
-                    elif isinstance(data, list) and len(data) > 0:
-                        self.add_finding('high', f"REST API exposes data: {ep}", f"Items: {len(data)}")
+                    r = self.session.head(url, timeout=6)
+                    if r.status_code == 200:
+                        exposed.append(path)
                 except:
                     pass
-
-    def check_uploads_directory_and_listing(self):
-        url = urljoin(self.target + '/', "/wp-content/uploads/")
-        r = self.safe_get(url)
-        if r and r.status_code == 200:
-            if "Index of" in r.text or "Parent Directory" in r.text:
-                self.add_finding('high', "Uploads directory listing enabled", url,
-                                 recommendation="Disable directory listing (Options -Indexes in .htaccess)")
-                php_files = re.findall(r'href="([^"]+\.php)"', r.text)
-                if php_files:
-                    self.add_finding('critical', "PHP files found in uploads directory", php_files[:6])
-
-    def check_theme_lfi_and_vulns(self):
-        test_params = [
-            ('template', '../../../../etc/passwd'),
-            ('file', '../../../wp-config.php'),
-            ('page', 'php://filter/convert.base64-encode/resource=../../../wp-config.php')
-        ]
-
-        for param, payload in test_params:
-            test_url = f"{self.target}/?{param}={quote(payload)}"
-            r = self.safe_get(test_url)
-            if r and r.status_code == 200:
-                content = r.text.lower()
-                if 'root:' in content and '/bin/' in content:
-                    self.add_finding('critical', f"Possible LFI via parameter '{param}'", test_url)
-                if 'db_name' in content or 'db_password' in content:
-                    self.add_finding('critical', f"wp-config.php leak via parameter '{param}'", test_url)
-
-    def run_full_scan(self):
-        print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
-        print(f"   WordPress/PHP Security Audit - FULL Passive + CVE Focus (2026)")
+            
+            context = {
+                'static_indicator': 'Directory listing enabled',
+                'behavioral_observation': f"Sensitive files directly accessible: {len(exposed)} of {len(sensitive_paths)} tested",
+                'contextual_interpretation': 'Directory listing is a posture issue; actual exposure depends on file permissions and location',
+                'practical_consideration': 'Risk level depends on what content is actually listable/accessible'
+            }
+            self.reality_context.append(context)
+    
+    # ================= PROFESSIONAL REPORT =================
+    def generate_professional_report(self):
+        """Generate professional assessment report"""
+        print(f"\n{Fore.CYAN}{'='*80}")
+        print("   PROFESSIONAL WORDPRESS SECURITY ASSESSMENT")
         print(f"   Target: {self.target}")
-        print(f"{'='*80}\n")
-
-        checks = [
-            self.check_headers_and_php_version_cves,
-            self.check_phpinfo_and_dangerous_configs,
-            self.detect_plugins_versions_and_cves,
-            self.check_sensitive_files_and_backups,
-            self.check_rest_api_information_leaks,
-            self.check_uploads_directory_and_listing,
-            self.check_theme_lfi_and_vulns,
+        print(f"   Assessment Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'='*80}{Style.RESET_ALL}\n")
+        
+        # Executive Summary
+        print(f"{Fore.YELLOW}📋 EXECUTIVE SUMMARY")
+        print(f"{'-'*40}")
+        
+        posture_count = len(self.observations['posture_indicators'])
+        behavior_count = len(self.observations['behavioral_patterns'])
+        
+        print(f"Posture Indicators Collected: {posture_count}")
+        print(f"Behavioral Patterns Observed: {behavior_count}")
+        print(f"Contextual Analyses: {len(self.reality_context)}")
+        print()
+        
+        # Posture Indicators (Static)
+        if self.observations['posture_indicators']:
+            print(f"{Fore.CYAN}🔍 POSTURE INDICATORS")
+            print(f"{'-'*40}")
+            
+            for indicator in self.observations['posture_indicators']:
+                sev = indicator.get('severity', 'UNKNOWN')
+                color = Fore.RED if sev == 'HIGH' else Fore.YELLOW if sev == 'MEDIUM' else Fore.CYAN
+                print(f"{color}• [{sev}] {indicator['type']}")
+                print(f"  {Fore.WHITE}{indicator.get('context', '')}")
+                if 'additional_context' in indicator:
+                    print(f"  {Fore.CYAN}  Note: {indicator['additional_context']}")
+                print()
+        
+        # Behavioral Observations
+        if self.observations['behavioral_patterns']:
+            print(f"{Fore.BLUE}🧪 BEHAVIORAL OBSERVATIONS")
+            print(f"{'-'*40}")
+            
+            for pattern in self.observations['behavioral_patterns']:
+                print(f"{Fore.BLUE}• {pattern['type']}")
+                print(f"  {Fore.WHITE}Observation: {pattern['observation']}")
+                print(f"  {Fore.CYAN}Context: {pattern.get('context', 'N/A')}")
+                if 'note' in pattern:
+                    print(f"  {Fore.YELLOW}Note: {pattern['note']}")
+                print()
+        
+        # Contextual Analysis
+        if self.reality_context:
+            print(f"{Fore.MAGENTA}🎯 CONTEXTUAL ANALYSIS")
+            print(f"{'-'*40}")
+            
+            for context in self.reality_context:
+                print(f"{Fore.WHITE}• {context['static_indicator']}")
+                print(f"  {Fore.CYAN}  Observed: {context['behavioral_observation']}")
+                print(f"  {Fore.GREEN}  Interpretation: {context['contextual_interpretation']}")
+                print(f"  {Fore.YELLOW}  Consideration: {context['practical_consideration']}")
+                print()
+        
+        # Assessment Notes
+        print(f"{Fore.GREEN}📝 ASSESSMENT NOTES")
+        print(f"{'-'*40}")
+        
+        notes = [
+            "• Assessment focused on observational patterns, not exploitation",
+            "• Behavioral observations based on server responses to non-malicious inputs",
+            "• Posture indicators represent configuration observations",
+            "• Contextual analysis connects static indicators with observed behaviors",
+            "• No authentication or session testing performed in this phase",
+            "• No destructive or denial-of-service testing conducted"
         ]
-
-        for check in checks:
-            try:
-                check()
-            except Exception as e:
-                print(f"Error during {check.__name__}: {e}")
-
-        # Summary Report
-        total_findings = sum(len(v) for v in self.results.values())
-        print("\n" + "="*80)
-        print(f"SCAN SUMMARY - Total findings: {total_findings}")
-        print("="*80)
-
-        for level in ['critical', 'high', 'medium', 'low', 'info']:
-            count = len(self.results[level])
-            if count > 0:
-                print(f"{Fore.RED if level=='critical' else Fore.YELLOW}{level.upper()}: {count} issues")
-
-        if self.plugins:
-            print("\nDetected Plugins:")
-            for slug, ver in self.plugins.items():
-                print(f"  • {slug.ljust(45)} v{ver}")
-
-        if self.accessible_files:
-            print("\nAccessible Sensitive Files:")
-            for path, url in self.accessible_files:
-                print(f"  • {path} → {url}")
-
-        # Save JSON report
-        fname = f"wp_full_audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        
+        for note in notes:
+            print(f"{Fore.WHITE}{note}")
+        
+        # Save comprehensive report
         report_data = {
             'target': self.target,
             'timestamp': datetime.utcnow().isoformat(),
-            'summary': {k: len(v) for k, v in self.results.items()},
-            'plugins': self.plugins,
-            'accessible_files': self.accessible_files,
-            'detailed_findings': self.results
+            'assessment_scope': 'Observational security assessment - static indicators and behavioral patterns',
+            'methodology': {
+                'static_assessment': 'Collection of observable configuration and posture indicators',
+                'behavioral_observation': 'Observation of server responses to non-malicious test inputs',
+                'contextual_analysis': 'Correlation between static indicators and observed behaviors'
+            },
+            'static_indicators': self.static_indicators,
+            'behavioral_data': self.behavioral_data,
+            'observations': self.observations,
+            'reality_context': self.reality_context,
+            'summary': {
+                'posture_indicators_count': posture_count,
+                'behavioral_patterns_count': behavior_count,
+                'contextual_analyses_count': len(self.reality_context)
+            }
         }
-        with open(fname, 'w', encoding='utf-8') as f:
+        
+        filename = f"wp_professional_assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(filename, 'w', encoding='utf-8') as f:
             json.dump(report_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"\n{Fore.GREEN}✅ Professional report saved to: {filename}")
+        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+    
+    def run_assessment(self):
+        """Execute professional assessment"""
+        try:
+            self.log('SUMMARY', 'Starting Professional WordPress Security Assessment')
+            self.assess_static_indicators()
+            time.sleep(1.5)
+            self.observe_server_behaviors()
+            time.sleep(1.0)
+            self.analyze_observational_context()
+            self.generate_professional_report()
+            self.log('SUMMARY', 'Assessment completed successfully')
+        except Exception as e:
+            self.log('NOTE', f'Assessment encountered issue: {str(e)[:100]}')
+            import traceback
+            traceback.print_exc()
 
-        print(f"\nFull report saved to: {fname}")
-        print("="*80)
-
+# ===============================
+# MAIN EXECUTION
+# ===============================
 def main():
     if len(sys.argv) != 2:
-        print("Cách dùng: python3 wp_full_audit.py <target_url>")
-        print("Ví dụ: python3 wp_full_audit.py https://example.com")
+        print(f"Usage: {sys.argv[0]} <target_url>")
+        print(f"Example: {sys.argv[0]} https://example.com")
+        print(f"\nNote: This tool performs observational assessment only.")
+        print(f"      No exploitation, authentication testing, or DoS testing.")
         sys.exit(1)
-
+    
     target = sys.argv[1]
-    audit = FullWPSecurityAudit(target)
-    audit.run_full_scan()
+    if not target.startswith(('http://', 'https://')):
+        target = f'http://{target}'
+    
+    print(f"\n{Fore.CYAN}{'='*60}")
+    print("   PROFESSIONAL WORDPRESS OBSERVATIONAL ASSESSMENT")
+    print("   Method: Static Indicators + Behavioral Patterns")
+    print(f"{'='*60}{Style.RESET_ALL}\n")
+    
+    print(f"{Fore.WHITE}Target: {target}")
+    print(f"Start Time: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"Scope: Observational patterns and server behavior analysis")
+    print(f"Note: This assessment does not attempt exploitation\n")
+    
+    audit = ProfessionalWPAudit(target)
+    audit.run_assessment()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

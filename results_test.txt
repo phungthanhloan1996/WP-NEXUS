@@ -1,0 +1,410 @@
+================================================================================
+WORDPRESS VULNERABILITY SCAN - ENHANCED EDITION
+Generated: 2026-01-15 10:56:09
+================================================================================
+
+
+================================================================================
+DOMAIN: buy.org
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.91s
+WordPress: Yes
+WP URL: http://buy.org
+Detection Reason: url_structure_wp_json_http
+================================================================================
+
+================================================================================
+DOMAIN: www.natsca.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.97s
+WordPress: Yes
+WP URL: https://natsca.blog/feed/
+Detection Reason: wp_content_url_feed
+================================================================================
+
+================================================================================
+DOMAIN: www.susiniklas.travel.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.29s
+WordPress: Yes
+WP URL: https://susiniklas.travel.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: www.flexx.music.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.73s
+WordPress: Yes
+WP URL: https://flexx.music.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: www.matsbengtsson.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.05s
+WordPress: Yes
+WP URL: https://matsbengtsson.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: cook.co
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.19s
+WordPress: Yes
+WP URL: https://cook.co
+Detection Reason: url_structure_wp_json
+================================================================================
+
+================================================================================
+DOMAIN: www.paijiu117.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.99s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in/zh-cn?redirect_to=https://paijiu117business.wordpress.com
+Detection Reason: meta_content_wp_login
+
+🔍 PLUGINS (3):
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • revslider: revslider.php, showbiz.php
+  • wp-file-manager: elfinder.php, upload.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: 3dspeco.school.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.59s
+WordPress: Yes
+WP URL: https://3dspeco.school.blog
+Detection Reason: link_header_homepage
+
+🔍 PLUGINS (3):
+  • revslider
+  • wp-file-manager
+  • duplicator [SUSP: dup-installer]
+
+⚠️ VULNERABILITIES (1):
+  • duplicator: dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: homeservice.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.57s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in?redirect_to=https://homeservicebusinessblog.wordpress.com
+Detection Reason: meta_content_wp_admin
+
+🔍 PLUGINS (3):
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • revslider: revslider.php, showbiz.php
+  • wp-file-manager: elfinder.php, upload.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: caibao105.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.72s
+WordPress: Yes
+WP URL: https://caibao105.business.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: www.crackdiabeqz.food.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.08s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in?redirect_to=https://crackdiabeqzfood.wordpress.com
+Detection Reason: meta_content_wp_login
+
+🔍 PLUGINS (3):
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • revslider: revslider.php, showbiz.php
+  • wp-file-manager: elfinder.php, upload.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.flourandthread.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.60s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: web-web.net
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 4.01s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: natsca.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.12s
+WordPress: Yes
+WP URL: https://natsca.blog
+Detection Reason: meta_generator_homepage
+================================================================================
+
+================================================================================
+DOMAIN: www.visao360graus.politics.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.56s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in/pt-br?redirect_to=https://visao360grauspolitics.wordpress.com
+Detection Reason: meta_content_wp_admin
+
+🔍 PLUGINS (3):
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • revslider: revslider.php, showbiz.php
+  • wp-file-manager: elfinder.php, upload.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.vetech.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.95s
+WordPress: Yes
+WP URL: https://vetech.business.blog/
+Detection Reason: meta_generator_homepage
+================================================================================
+
+================================================================================
+DOMAIN: www.caibao107.business.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.53s
+WordPress: Yes
+WP URL: https://wordpress.com/log-in/zh-cn?redirect_to=https://caibao107business.wordpress.com
+Detection Reason: meta_content_wp_admin
+
+🔍 PLUGINS (3):
+  • revslider [SUSP: revslider.php, showbiz.php]
+  • wp-file-manager [SUSP: elfinder.php, upload.php]
+  • duplicator [SUSP: installer.php, dup-installer]
+
+⚠️ VULNERABILITIES (3):
+  • revslider: revslider.php, showbiz.php
+  • wp-file-manager: elfinder.php, upload.php
+  • duplicator: installer.php, dup-installer
+================================================================================
+
+================================================================================
+DOMAIN: www.senia.art.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.07s
+WordPress: Yes
+WP URL: https://senia.art.blog/feed/
+Detection Reason: link_header_feed
+================================================================================
+
+================================================================================
+DOMAIN: tibz.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.44s
+WordPress: Yes
+WP URL: https://www.tibz.blog/
+Detection Reason: rss_feed_homepage_http
+================================================================================
+
+================================================================================
+DOMAIN: www.nejko.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.59s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: vagabunda.travel.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.77s
+WordPress: Yes
+WP URL: https://travel.blog/
+Detection Reason: meta_generator_homepage_http
+================================================================================
+
+================================================================================
+DOMAIN: tech-news.org
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.41s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: www.lamiacucina.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.11s
+WordPress: Yes
+WP URL: https://lamiacucina.blog/
+Detection Reason: meta_generator_homepage_http
+================================================================================
+
+================================================================================
+DOMAIN: news77.org
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.63s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: app.blog.bbiq.jp
+----------------------------------------
+Alive: Yes
+HTTP Status: 404
+Response Time: 0.27s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: www.evropeiskoobrazovanie.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 3.65s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: learn24.vn
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 3.83s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: www.photokram.blog
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 2.06s
+WordPress: Yes
+WP URL: http://www.photokram.blog
+Detection Reason: meta_generator_homepage_http
+================================================================================
+
+================================================================================
+DOMAIN: news-41.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 1.59s
+WordPress: No
+================================================================================
+
+================================================================================
+DOMAIN: portal.com
+----------------------------------------
+Alive: Yes
+HTTP Status: 200
+Response Time: 0.40s
+WordPress: No
+================================================================================
+
+
+================================================================================
+DETAILED SCAN SUMMARY
+================================================================================
+
+📊 DOMAIN STATISTICS:
+  • Total Domains: 176
+  • Domains Alive: 30 (17.0%)
+  • Domains Dead: 27 (15.3%)
+
+🅆🄿 WORDPRESS DETECTION:
+  • WP Detected: 20 (66.7% of alive)
+  • WP Not Detected: 10
+  • Estimated False Negatives: 10 (100.0%)
+
+🔍 FINDINGS:
+  • Plugins Found: 18
+  • Vulnerabilities Found: 16
+
+⚡ PERFORMANCE:
+  • Total Requests: 4356
+  • Requests/Minute: 1307.5
+  • Domains/Second: 0.29
+  • Total Time: 199.9s
+  • Rate Limited: 0 times
+
+🚨 VULNERABLE SITES (6):
+----------------------------------------
+  • www.paijiu117.business.blog - 3 vulns - revslider: revslider.php, showbiz.php...
+  • 3dspeco.school.blog - 1 vulns - duplicator: dup-installer...
+  • homeservice.business.blog - 3 vulns - revslider: revslider.php, showbiz.php...
+  • www.crackdiabeqz.food.blog - 3 vulns - revslider: revslider.php, showbiz.php...
+  • www.visao360graus.politics.blog - 3 vulns - revslider: revslider.php, showbiz.php...
+  • www.caibao107.business.blog - 3 vulns - revslider: revslider.php, showbiz.php...
+
+================================================================================
