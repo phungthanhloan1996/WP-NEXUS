@@ -1,0 +1,309 @@
+{
+  "target": "https://dolphin-vc.com",
+  "timestamp": "2026-01-15T17:26:52.819452",
+  "assessment_scope": "Observational security assessment - static indicators and behavioral patterns",
+  "methodology": {
+    "static_assessment": "Collection of observable configuration and posture indicators",
+    "behavioral_observation": "Observation of server responses to non-malicious test inputs",
+    "contextual_analysis": "Correlation between static indicators and observed behaviors"
+  },
+  "static_indicators": {
+    "php_version": "7.4.33",
+    "php_version_in_header": true
+  },
+  "behavioral_data": {
+    "fingerprint": {
+      "detected_cms": true,
+      "wp_version": "5.6.1",
+      "plugins": [
+        {
+          "slug": "akismet",
+          "name": "Unknown",
+          "version": "5.1",
+          "evidence": "readme.txt accessible",
+          "detection_source": "common_list_brute"
+        }
+      ],
+      "themes": [
+        {
+          "slug": "enigma2",
+          "name": "Enigma",
+          "version": "4.7",
+          "evidence": "style.css accessible",
+          "detection_source": "passive_resource_path"
+        }
+      ],
+      "plugin_detection_sources": [
+        "akismet (common_list_brute)"
+      ]
+    },
+    "rate_handling": {
+      "sequential_requests": [
+        {
+          "request": 1,
+          "status": 200,
+          "time": 0.16,
+          "length": 8339,
+          "redirected": false,
+          "final_location": null
+        },
+        {
+          "request": 2,
+          "status": 200,
+          "time": 0.154,
+          "length": 8339,
+          "redirected": false,
+          "final_location": null
+        },
+        {
+          "request": 3,
+          "status": 200,
+          "time": 0.131,
+          "length": 8339,
+          "redirected": false,
+          "final_location": null
+        },
+        {
+          "request": 4,
+          "status": 200,
+          "time": 0.156,
+          "length": 8339,
+          "redirected": false,
+          "final_location": null
+        },
+        {
+          "request": 5,
+          "status": 200,
+          "time": 0.161,
+          "length": 8339,
+          "redirected": false,
+          "final_location": null
+        }
+      ],
+      "pattern_analysis": {
+        "response_times_consistent": false,
+        "gradual_slowdown_observed": false,
+        "all_requests_succeeded": true
+      },
+      "baseline": {
+        "initial_response_time": 0.15977001190185547,
+        "initial_status": 200
+      }
+    },
+    "error_responses": {
+      "baseline_response": {
+        "status": 200,
+        "length": 365974,
+        "content_type": "text/html; charset=UTF-8",
+        "has_login_form": false
+      },
+      "test_observations": [
+        {
+          "test_type": "non-existent_plugin_path",
+          "description": "Access attempt to non-existent plugin directory",
+          "url": "https://dolphin-vc.com/wp-content/plugins/nonexistent-plugin-observation/readme.txt",
+          "status": 404,
+          "response_length": 32563,
+          "length_deviation_percent": 91.1,
+          "content_type": "text/html; charset=UTF-8",
+          "differs_from_baseline": true,
+          "content_analysis": {
+            "contains_technical_errors": false,
+            "contains_path_disclosure": false,
+            "contains_database_references": true,
+            "is_default_fallback": true
+          },
+          "observed_behaviors": [
+            "VERBOSE_404_RESPONSE",
+            "WORDPRESS_SIGNATURE_IN_404"
+          ]
+        },
+        {
+          "test_type": "directory_traversal_pattern",
+          "description": "Parameter containing directory traversal pattern",
+          "url": "https://dolphin-vc.com/?test_param=../../../observation-test",
+          "status": 200,
+          "response_length": 365974,
+          "length_deviation_percent": 0.0,
+          "content_type": "text/html; charset=UTF-8",
+          "differs_from_baseline": 0.0,
+          "content_analysis": {
+            "contains_technical_errors": false,
+            "contains_path_disclosure": false,
+            "contains_database_references": true,
+            "is_default_fallback": true
+          },
+          "observed_behaviors": [
+            "DATABASE_REFERENCES_IN_RESPONSE",
+            "DEFAULT_FALLBACK_RENDERING"
+          ]
+        },
+        {
+          "test_type": "invalid_ajax_action",
+          "description": "Invalid AJAX action parameter",
+          "url": "https://dolphin-vc.com/wp-admin/admin-ajax.php?action=non_existent_action_obs",
+          "status": 400,
+          "response_length": 1,
+          "length_deviation_percent": 100.0,
+          "content_type": "text/html; charset=UTF-8",
+          "differs_from_baseline": true,
+          "content_analysis": {
+            "contains_technical_errors": false,
+            "contains_path_disclosure": false,
+            "contains_database_references": false,
+            "is_default_fallback": false
+          },
+          "observed_behaviors": []
+        },
+        {
+          "test_type": "extended_search_query",
+          "description": "Extended length search parameter",
+          "url": "https://dolphin-vc.com/?s=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "status": 200,
+          "response_length": 43113,
+          "length_deviation_percent": 88.2,
+          "content_type": "text/html; charset=UTF-8",
+          "differs_from_baseline": true,
+          "content_analysis": {
+            "contains_technical_errors": false,
+            "contains_path_disclosure": false,
+            "contains_database_references": true,
+            "is_default_fallback": true
+          },
+          "observed_behaviors": [
+            "DATABASE_REFERENCES_IN_RESPONSE",
+            "DEFAULT_FALLBACK_RENDERING"
+          ]
+        }
+      ],
+      "summary": {
+        "tests_completed": 4,
+        "status_200_responses": 2,
+        "timeout_occurrences": 0,
+        "technical_errors_observed": 0,
+        "path_disclosures_observed": 0
+      }
+    },
+    "auth_boundaries": {
+      "path_observations": [
+        {
+          "path": "/wp-admin/",
+          "description": "Administration dashboard",
+          "expected_protection": true,
+          "final_status": 200,
+          "final_url": "https://dolphin-vc.com/wp-login.php?redirect_to=https%3A%2F%2Fdolphin-vc.com%2Fwp-admin%2F&reauth=1",
+          "redirects_occurred": true,
+          "redirect_chain": [
+            {
+              "status": 302,
+              "url": "https://dolphin-vc.com/wp-admin/",
+              "location": "https://dolphin-vc.com/wp-login.php?redirect_to=https%3A%2F%2Fdolphin-vc.com%2Fwp-admin%2F&reauth=1"
+            }
+          ],
+          "response_length": 8051,
+          "content_type": "text/html; charset=UTF-8",
+          "observed_access_level": "LOGIN_PAGE"
+        },
+        {
+          "path": "/wp-admin/users.php",
+          "description": "User management",
+          "expected_protection": true,
+          "final_status": 200,
+          "final_url": "https://dolphin-vc.com/wp-login.php?redirect_to=https%3A%2F%2Fdolphin-vc.com%2Fwp-admin%2Fusers.php&reauth=1",
+          "redirects_occurred": true,
+          "redirect_chain": [
+            {
+              "status": 302,
+              "url": "https://dolphin-vc.com/wp-admin/users.php",
+              "location": "https://dolphin-vc.com/wp-login.php?redirect_to=https%3A%2F%2Fdolphin-vc.com%2Fwp-admin%2Fusers.php&reauth=1"
+            }
+          ],
+          "response_length": 8060,
+          "content_type": "text/html; charset=UTF-8",
+          "observed_access_level": "LOGIN_PAGE"
+        },
+        {
+          "path": "/wp-admin/options-general.php",
+          "description": "Settings",
+          "expected_protection": true,
+          "final_status": 200,
+          "final_url": "https://dolphin-vc.com/wp-login.php?redirect_to=https%3A%2F%2Fdolphin-vc.com%2Fwp-admin%2Foptions-general.php&reauth=1",
+          "redirects_occurred": true,
+          "redirect_chain": [
+            {
+              "status": 302,
+              "url": "https://dolphin-vc.com/wp-admin/options-general.php",
+              "location": "https://dolphin-vc.com/wp-login.php?redirect_to=https%3A%2F%2Fdolphin-vc.com%2Fwp-admin%2Foptions-general.php&reauth=1"
+            }
+          ],
+          "response_length": 8070,
+          "content_type": "text/html; charset=UTF-8",
+          "observed_access_level": "LOGIN_PAGE"
+        },
+        {
+          "path": "/wp-login.php",
+          "description": "Login page",
+          "expected_protection": false,
+          "final_status": 200,
+          "final_url": "https://dolphin-vc.com/wp-login.php",
+          "redirects_occurred": false,
+          "redirect_chain": null,
+          "response_length": 8051,
+          "content_type": "text/html; charset=UTF-8",
+          "observed_access_level": "LOGIN_PAGE"
+        },
+        {
+          "path": "/wp-content/uploads/",
+          "description": "Uploads directory",
+          "expected_protection": false,
+          "final_status": 403,
+          "final_url": "https://dolphin-vc.com/wp-content/uploads/",
+          "redirects_occurred": false,
+          "redirect_chain": null,
+          "response_length": 153,
+          "content_type": "text/html",
+          "observed_access_level": "ACCESS_DENIED"
+        }
+      ],
+      "boundary_analysis": {
+        "admin_paths_without_redirect": 0,
+        "login_forms_observed": 0,
+        "direct_access_cases": 0
+      }
+    }
+  },
+  "observations": {
+    "posture_indicators": [
+      {
+        "type": "SERVER_SOFTWARE_DISCLOSURE",
+        "severity": "HIGH",
+        "evidence": "X-Powered-By: PHP/7.4.33",
+        "context": "PHP version disclosed in response headers",
+        "recommendation": "Consider removing or customizing the X-Powered-By header",
+        "additional_context": "PHP 7.4.33 is EOL or approaching EOL"
+      }
+    ],
+    "behavioral_patterns": [
+      {
+        "type": "CONSISTENT_RESPONSE_TIMES",
+        "observation": "Server maintained consistent response times under sequential requests",
+        "data": "Response times: [0.16, 0.15, 0.13, 0.16, 0.16]",
+        "context": "No rate-limiting behavior observed during light sequential probing"
+      }
+    ],
+    "configuration_observations": []
+  },
+  "reality_context": [
+    {
+      "static_indicator": "PHP 7.4.33 disclosed in headers",
+      "behavioral_observation": "Technical errors observed: 0 cases",
+      "contextual_interpretation": "Version disclosure combined with error details may increase information available to attackers",
+      "practical_consideration": "While PHP version alone is a posture indicator, combined with error leakage it represents a clearer attack surface"
+    }
+  ],
+  "summary": {
+    "posture_indicators_count": 1,
+    "behavioral_patterns_count": 1,
+    "contextual_analyses_count": 1
+  }
+}

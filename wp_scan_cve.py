@@ -348,6 +348,136 @@ class ServerBehaviorObserver:
         
         return analysis
 
+
+
+
+    def fingerprint_plugins_themes(self):
+        """Passive + enhanced semi-active fingerprinting for plugins & themes
+        - Passive: parse HTML for resource paths and generator meta
+        - Semi-active: check readme.txt/style.css for detected slugs + brute top common plugins
+        """
+        observations = {
+            'detected_cms': False,
+            'wp_version': None,
+            'plugins': [],
+            'themes': [],
+            'plugin_detection_sources': []  # Để theo dõi nguồn phát hiện (debug/report)
+        }
+
+        try:
+            # Lấy trang chủ một lần
+            r = self.session.get(self.target, timeout=10)
+            if r.status_code != 200:
+                return observations
+
+            html = r.text
+            html_lower = html.lower()
+
+            # 1. Passive: Xác nhận là WordPress + version từ meta generator
+            if any(x in html_lower for x in ['wp-content', 'wp-includes', 'wp-json', 'wordpress']):
+                observations['detected_cms'] = True
+
+            generator_match = re.search(r'<meta name="generator" content="WordPress ([\d\.]+)"', html, re.IGNORECASE)
+            if generator_match:
+                observations['wp_version'] = generator_match.group(1)
+
+            # 2. Passive: Tìm slug plugin/theme từ các đường dẫn tài nguyên trong HTML
+            plugin_paths = set(re.findall(r'/wp-content/plugins/([^/]+)/', html))
+            theme_paths = set(re.findall(r'/wp-content/themes/([^/]+)/', html))
+
+            # 3. Semi-active: Check chi tiết cho các slug đã phát hiện (passive)
+            for slug in list(plugin_paths)[:12]:  # tăng nhẹ giới hạn
+                self._check_plugin_readme(slug, observations, source="passive_resource_path")
+            
+            # 4. Semi-active: Check theme đã phát hiện
+            for slug in list(theme_paths)[:6]:
+                self._check_theme_style_css(slug, observations, source="passive_resource_path")
+
+            # 5. ENHANCED: Brute-force nhẹ top common plugins (rất hiệu quả với site che giấu tốt)
+            common_plugin_slugs = [
+                'contact-form-7', 'elementor', 'woocommerce', 'yoast-seo', 'akismet',
+                'wpforms-lite', 'all-in-one-seo-pack', 'jetpack', 'wordfence', 
+                'litespeed-cache', 'rank-math', 'wp-rocket', 'classic-editor',
+                'wp-mail-smtp', 'updraftplus', 'monsterinsights-lite', 'smush',
+                'autoptimize', 'redirection', 'wp-optimize', 'complianz-gdpr',
+                'mailchimp-for-wp', 'ninja-forms', 'tablepress', 'better-search-replace',
+                'duplicate-post', 'google-site-kit', 'really-simple-ssl'
+            ]
+
+            detected_slugs = {p['slug'] for p in observations['plugins']}  # Tránh check lại
+
+            for slug in common_plugin_slugs:
+                if slug in detected_slugs:
+                    continue
+
+                self._check_plugin_readme(slug, observations, source="common_list_brute")
+
+                # Giới hạn tốc độ + tránh bị WAF chặn
+                time.sleep(0.9 + (len(observations['plugins']) * 0.1))  # tăng dần delay nhẹ
+
+            # 6. Optional: Check thêm một số file signature phổ biến khác (nếu cần)
+            # self._check_extra_signatures(observations)
+
+            return observations
+
+        except Exception as e:
+            return {'error': str(e)[:120]}
+
+
+    def _check_plugin_readme(self, slug, observations, source="unknown"):
+        """Helper: Check readme.txt của plugin và thêm vào observations nếu tồn tại"""
+        url = urljoin(self.target, f'/wp-content/plugins/{slug}/readme.txt')
+        try:
+            # HEAD trước để tiết kiệm băng thông
+            head_resp = self.session.head(url, timeout=5, allow_redirects=False)
+            if head_resp.status_code != 200:
+                return
+
+            # GET để lấy nội dung version + name
+            resp = self.session.get(url, timeout=7)
+            if resp.status_code == 200:
+                version_match = re.search(r'Stable tag:\s*([\d\.]+)', resp.text, re.IGNORECASE)
+                name_match = re.search(r'Plugin Name:\s*(.+)', resp.text, re.IGNORECASE)
+
+                plugin_info = {
+                    'slug': slug,
+                    'name': name_match.group(1).strip() if name_match else 'Unknown',
+                    'version': version_match.group(1) if version_match else 'Unknown',
+                    'evidence': 'readme.txt accessible',
+                    'detection_source': source
+                }
+                observations['plugins'].append(plugin_info)
+                observations['plugin_detection_sources'].append(f"{slug} ({source})")
+                print(f"[+] Detected plugin: {slug} ({source})")  # debug console
+        except:
+            pass
+
+
+    def _check_theme_style_css(self, slug, observations, source="unknown"):
+        """Helper: Check style.css của theme"""
+        url = urljoin(self.target, f'/wp-content/themes/{slug}/style.css')
+        try:
+            head_resp = self.session.head(url, timeout=5)
+            if head_resp.status_code != 200:
+                return
+
+            resp = self.session.get(url, timeout=7)
+            if resp.status_code == 200:
+                version_match = re.search(r'Version:\s*([\d\.]+)', resp.text, re.IGNORECASE)
+                name_match = re.search(r'Theme Name:\s*(.+)', resp.text, re.IGNORECASE)
+
+                theme_info = {
+                    'slug': slug,
+                    'name': name_match.group(1).strip() if name_match else 'Unknown',
+                    'version': version_match.group(1) if version_match else 'Unknown',
+                    'evidence': 'style.css accessible',
+                    'detection_source': source
+                }
+                observations['themes'].append(theme_info)
+        except:
+            pass
+
+
 # ===============================
 # PROFESSIONAL AUDIT ENGINE
 # ===============================
@@ -439,7 +569,8 @@ class ProfessionalWPAudit:
     def observe_server_behaviors(self):
         """Observe dynamic server behaviors"""
         self.log('BEHAVIOR', 'Beginning behavioral observation phase')
-        
+        fp_data = self.observer.fingerprint_plugins_themes()
+        self.behavioral_data['fingerprint'] = fp_data
         # 1. Rate handling observation
         self.log('OBSERVATION', 'Observing request rate handling patterns...')
         rate_data = self.observer.observe_rate_handling()
