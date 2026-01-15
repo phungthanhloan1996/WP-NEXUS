@@ -2,6 +2,7 @@
 """
 WordPress Vulnerability Scanner - Professional Edition
 Fix tất cả các vấn đề: domain source, detection, rate limiting, stats
+Tăng mạnh số lượng domain WP yếu bằng Common Crawl + crt.sh (2026)
 Author: Security Researcher
 """
 
@@ -19,21 +20,28 @@ from urllib.parse import urlparse, urljoin, quote
 from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass, field
 from asyncio import Semaphore
-import hashlib
+import json
 
 # ================= CONFIGURATION =================
 CONFIG = {
-    'MAX_CONCURRENT': 10,           # Tối ưu cho rate limiting
-    'TIMEOUT': 8,                   # Timeout ngắn hơn
-    'MAX_HTML_SIZE': 200_000,       # Giảm kích thước đọc
-    'DELAY_RANGE': (0.8, 2.5),      # Delay ngắn hơn đáng kể
-    'REQUESTS_PER_MINUTE': 120,     # Tăng rate limit
-    'MIN_REQUEST_INTERVAL': 0.5,    # Khoảng cách rất ngắn
+    'MAX_CONCURRENT': 25,
+    'TIMEOUT': 5,
+    'MAX_HTML_SIZE': 200_000,
+    'DELAY_RANGE': (0.8, 2.5),
+    'REQUESTS_PER_MINUTE': 120,
+    'MIN_REQUEST_INTERVAL': 0.5,
     'MAX_RETRIES': 1,
     'RETRY_DELAY': 1.5,
-    'SCAN_TIMEOUT': 10800,          # 3 giờ timeout
-    'DOMAIN_LIMIT': 300,            # Giảm limit, tập trung chất lượng
-    'WP_DETECTION_TIMEOUT': 5,      # Timeout riêng cho detection
+    'SCAN_TIMEOUT': 10800,          # 3 giờ
+    'DOMAIN_LIMIT': 300,           # Tăng lên để lấy nhiều domain WP yếu hơn
+    'WP_DETECTION_TIMEOUT': 5,
+    'DATA_SOURCES': {
+        'crtsh': True,              # Certificate Transparency - nguồn mạnh nhất
+        'commoncrawl': True,        # Common Crawl với nhiều patterns
+        'tranco': True,
+        'wp_api': True,
+        'known_wp': True,
+    }
 }
 
 # ================= LOGGING =================
@@ -43,10 +51,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger('wp_scanner')
 
-# ================= ENHANCED DATA STRUCTURES =================
+# ================= DATA STRUCTURES =================
 @dataclass
 class DomainInfo:
-    """Thông tin chi tiết về domain"""
     domain: str
     alive: bool = False
     http_status: int = 0
@@ -54,14 +61,11 @@ class DomainInfo:
     wp_detection_reason: str = ""
     wp_url: str = ""
     response_time: float = 0.0
-    
-    # Thống kê
     requests_made: int = 0
     detection_attempts: int = 0
 
 @dataclass
 class ScanResult:
-    """Kết quả scan chi tiết"""
     domain_info: DomainInfo
     plugins: Dict[str, Dict] = field(default_factory=dict)
     suspicious_paths: List[Tuple[str, str]] = field(default_factory=list)
@@ -73,24 +77,18 @@ class ScanResult:
 
 @dataclass
 class ScanStats:
-    """Thống kê chi tiết, tách biệt các loại"""
     total_domains: int = 0
-    # Tách biệt các trạng thái
     domains_alive: int = 0
     domains_dead: int = 0
     wp_detected: int = 0
     wp_not_detected: int = 0
-    wp_false_negative: int = 0  # Dự đoán false negative
-    # Thống kê request
+    wp_false_negative: int = 0
     requests_total: int = 0
     requests_success: int = 0
     requests_failed: int = 0
-    # Scan progress
     scanned: int = 0
-    # Findings
     plugins_found: int = 0
     vulnerabilities_found: int = 0
-    # Performance
     start_time: float = field(default_factory=time.time)
     rate_limited_count: int = 0
     
@@ -122,202 +120,268 @@ class ScanStats:
             return (self.wp_false_negative / self.wp_not_detected) * 100
         return 0.0
 
-# ================= SMART DOMAIN FETCHER =================
+# ================= SMART DOMAIN FETCHER - CẢI TIẾN MẠNH =================
 class SmartDomainFetcher:
-    """Lấy domain THÔNG MINH - tập trung vào WordPress thật"""
+    """Lấy domain THÔNG MINH - tập trung vào WordPress thật (đặc biệt WP yếu)"""
     
     @staticmethod
-    async def fetch_high_quality_domains(session: aiohttp.ClientSession, limit: int = 200) -> List[str]:
-        """Lấy domain CHẤT LƯỢNG cao - tập trung WordPress thật"""
+    async def fetch_high_quality_domains(session: aiohttp.ClientSession, limit: int = CONFIG['DOMAIN_LIMIT']) -> List[str]:
+        """Lấy domain CHẤT LƯỢNG cao - tập trung WordPress thật, đặc biệt WP yếu"""
         all_domains = set()
         
-        print("[+] Đang lấy domain CHẤT LƯỢNG...")
+        print("[+] Đang lấy domain CHẤT LƯỢNG CAO (tập trung WP yếu)...")
         
-        # 1. CT Logs với filter THÔNG MINH
-        ct_domains = await SmartDomainFetcher._fetch_from_ct_smart(session, 100)
-        print(f"   • CT Logs: {len(ct_domains)} domain")
+        # 1. crt.sh - nguồn mạnh nhất (Certificate Transparency Logs)
+        if CONFIG['DATA_SOURCES'].get('crtsh', True):
+            crt_domains = await SmartDomainFetcher._fetch_from_crtsh_enhanced(session, 1500)
+            print(f"   • crt.sh (CT Logs): {len(crt_domains)} domain")
+            all_domains.update(crt_domains)
         
-        # 2. Dựa trên WordPress phổ biến
-        wp_domains = await SmartDomainFetcher._fetch_wordpress_patterns(session, 100)
-        print(f"   • WP Patterns: {len(wp_domains)} domain")
+        # 2. Common Crawl - nâng cấp với nhiều pattern hơn
+        if CONFIG['DATA_SOURCES'].get('commoncrawl', True):
+            cc_domains = await SmartDomainFetcher._fetch_from_commoncrawl_enhanced(session, 2000)
+            print(f"   • Common Crawl: {len(cc_domains)} domain")
+            all_domains.update(cc_domains)
         
-        # 3. Từ các site WordPress đã biết (crawl từ danh sách public)
-        known_domains = SmartDomainFetcher._get_known_wp_sites(50)
-        print(f"   • Known WP: {len(known_domains)} domain")
+        # 3. Tranco Top Sites
+        if CONFIG['DATA_SOURCES'].get('tranco', True):
+            tranco_domains = await SmartDomainFetcher._fetch_from_tranco(session, 500)
+            print(f"   • Tranco List: {len(tranco_domains)} domain")
+            all_domains.update(tranco_domains)
         
-        # Combine và filter
-        all_domains.update(ct_domains)
-        all_domains.update(wp_domains)
-        all_domains.update(known_domains)
+        # 4. WordPress.org API
+        if CONFIG['DATA_SOURCES'].get('wp_api', True):
+            wp_api_domains = await SmartDomainFetcher._fetch_from_wordpress_api(session, 200)
+            print(f"   • WordPress.org API: {len(wp_api_domains)} domain")
+            all_domains.update(wp_api_domains)
         
-        # Filter cực mạnh
+        # 5. Known WP sites
+        if CONFIG['DATA_SOURCES'].get('known_wp', True):
+            known_domains = SmartDomainFetcher._get_known_wp_sites(100)
+            print(f"   • Known WP sites: {len(known_domains)} domain")
+            all_domains.update(known_domains)
+        
+        # Filter chất lượng - cơ bản để loại bỏ domain không hợp lệ
         filtered = []
-        for domain in all_domains:
-            if SmartDomainFetcher._is_high_quality_domain(domain):
-                filtered.append(domain)
+        for d in all_domains:
+            if SmartDomainFetcher._is_high_quality_domain(d):
+                filtered.append(d)
         
-        print(f"[+] Tổng cộng: {len(filtered)} domain chất lượng")
-        return filtered[:limit]
+        print(f"[+] Tổng cộng sau filter: {len(filtered)} domain chất lượng")
+        return list(filtered)[:limit]
     
     @staticmethod
-    def _is_high_quality_domain(domain: str) -> bool:
-        """Filter cực gắt - chỉ lấy domain có khả năng cao là WP site thật"""
-        # Loại bỏ các domain rác
-        bad_patterns = [
-            'cloudflare', 'amazonaws', 'google', 'microsoft',
-            'godaddy', 'namecheap', 'wordpress.com', 'blogspot',
-            'wix.com', 'weebly.com', 'tumblr.com', 'github.io',
-            '000webhost', 'hostinger', 'bluehost',
-        ]
-        
-        if any(pattern in domain.lower() for pattern in bad_patterns):
-            return False
-        
-        # Domain quá dài hoặc quá ngắn
-        if len(domain) < 6 or len(domain) > 40:
-            return False
-        
-        # Có từ khóa liên quan đến WP/blog
-        wp_keywords = [
-            'blog', 'news', 'magazine', 'journal', 'portal',
-            'article', 'post', 'story', 'media', 'press',
-            'content', 'publish', 'write', 'author',
-            'shop', 'store', 'market', 'ecommerce',  # WooCommerce
-            'school', 'edu', 'academy', 'course',    # Learning
-            'realestate', 'property', 'house',       # Real estate
-            'travel', 'tour', 'hotel', 'booking',    # Travel
-            'restaurant', 'food', 'cafe', 'menu',    # Food
-            'medical', 'clinic', 'hospital', 'doctor',  # Medical
-            'law', 'legal', 'attorney', 'lawyer',    # Legal
-        ]
-        
-        # Tách domain để kiểm tra
-        domain_lower = domain.lower()
-        domain_parts = domain_lower.replace('-', '.').split('.')
-        
-        # Kiểm tra các phần của domain
-        for part in domain_parts:
-            if part in wp_keywords:
-                return True
-        
-        # Domain có định dạng phổ biến của WP sites
-        good_patterns = [
-            r'^[a-z]+[0-9]*\.(com|net|org|vn|io|co)$',
-            r'^[a-z]+-[a-z]+\.(com|net|org)$',
-            r'^[a-z]{2,}[0-9]{2,}\.(com|net|org)$',
-        ]
-        
-        for pattern in good_patterns:
-            if re.match(pattern, domain_lower):
-                return True
-        
-        return False
-    
-    @staticmethod
-    async def _fetch_from_ct_smart(session: aiohttp.ClientSession, limit: int) -> List[str]:
-        """CT Logs với filter thông minh hơn"""
+    async def _fetch_from_crtsh_enhanced(session: aiohttp.ClientSession, limit: int = 1500) -> List[str]:
+        """Certificate Transparency Logs - nguồn mạnh nhất để tìm domain WordPress"""
         domains = set()
-        
-        # Query TẬP TRUNG vào WordPress
-        wp_queries = [
-            "wordpress", "wp-content", "wp-includes",
-            "blog", "weblog", "cms-wordpress",
-            "woocommerce", "wpshop", "wpstore",
+        search_terms = [
+            'wordpress', '%wp-content%', '%wp-includes%', '%wp-json%',
+            'elementor', 'avada', 'divi', 'woocommerce', '%wp-admin%',
+            'wp-content', 'wp-includes', 'wp-json', 'wp-admin',
+            'blog', 'news', 'magazine', 'portal',
         ]
         
-        for query in wp_queries[:4]:  # Chỉ 4 query tốt nhất
+        print(f"   [crt.sh] Đang query {len(search_terms)} terms...")
+        
+        for i, term in enumerate(search_terms, 1):
+            # HIỂN THỊ TIẾN TRÌNH
+            sys.stdout.write(f"\r   [crt.sh] {i}/{len(search_terms)}: {term[:15]}...")
+            sys.stdout.flush()
+            
             try:
-                url = f"https://crt.sh/?q={quote(query)}&output=json"
-                async with session.get(url, timeout=10) as resp:
+                url = f"https://crt.sh/?q={quote(term)}&output=json"
+                async with session.get(url, timeout=20) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        for entry in data[:80]:  # Giới hạn mỗi query
-                            name = entry.get('name_value', '')
-                            if isinstance(name, str):
-                                for line in name.split('\n'):
-                                    domain = line.strip().lower()
-                                    # GIỮ NGUYÊN subdomain - rất quan trọng!
-                                    if '*' not in domain and domain.count('.') >= 1:
-                                        domains.add(domain)
+                        for entry in data:
+                            fields = ['name_value', 'common_name', 'issuer_name']
+                            for field in fields:
+                                value = entry.get(field, '')
+                                if value:
+                                    for line in str(value).split('\n'):
+                                        line = line.strip()
+                                        line = line.replace('*.', '').replace('*', '').strip()
+                                        if line and '.' in line:
+                                            domain = line.split('/')[0].split(':')[0].lower()
+                                            if '.' in domain and len(domain) < 100:
+                                                domains.add(domain)
+                
+                await asyncio.sleep(0.3)
+                
+            except Exception:
+                continue
+        
+        # XONG HIỂN THỊ KẾT QUẢ
+        print(f"\r   [crt.sh] Đã lấy {len(domains)} domain                        ")
+        return list(domains)[:limit]
+    
+    @staticmethod
+    async def _fetch_from_commoncrawl_enhanced(session: aiohttp.ClientSession, limit: int = 2000) -> List[str]:
+        """Common Crawl với nhiều pattern hơn và limit cao hơn"""
+        domains = set()
+        try:
+            # Lấy latest index
+            async with session.get("https://index.commoncrawl.org/collinfo.json", timeout=20) as r:
+                if r.status != 200:
+                    return []
+                indexes = await r.json()
+                latest = indexes[0]['id'] if indexes else None
+            
+            if not latest:
+                return []
+            
+            # Nhiều patterns WordPress hơn
+            patterns = [
+                'wp-content/*',
+                'wp-includes/*',
+                'wp-json/*',
+                'wp-admin/*',
+                'wp-login.php',
+                'wp-emoji-release.min.js',
+                'wp-embed.min.js',
+                'xmlrpc.php',
+                '/feed/',  # RSS feed thường có trong WP
+                'comment-page',  # WordPress comments
+            ]
+            
+            print(f"   [CommonCrawl] Đang query {len(patterns)} patterns...")
+            
+            for pattern in patterns:
+                try:
+                    params = {
+                        'url': f'*.{pattern}' if not pattern.startswith('/') else f'*{pattern}*',
+                        'output': 'json',
+                        'limit': '200'  # Tăng limit cho mỗi pattern
+                    }
+                    
+                    url = f"https://index.commoncrawl.org/{latest}-index"
+                    async with session.get(url, params=params, timeout=40) as resp:
+                        if resp.status == 200:
+                            # Đọc streaming response
+                            async for line in resp.content:
+                                try:
+                                    data = json.loads(line)
+                                    url_str = data.get('url', '')
+                                    if url_str:
+                                        domain = urlparse(url_str).netloc.lower()
+                                        if domain and '.' in domain:
+                                            domains.add(domain)
+                                except:
+                                    continue
+                except Exception as e:
+                    logger.debug(f"CommonCrawl pattern {pattern} error: {e}")
+                    continue
+                
+                # Delay giữa các pattern
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            logger.debug(f"CommonCrawl init error: {e}")
+        
+        return list(domains)[:limit]
+    
+    @staticmethod
+    async def _fetch_from_tranco(session: aiohttp.ClientSession, limit: int) -> List[str]:
+        """Tranco Top Sites - free public dataset"""
+        domains = set()
+        try:
+            # Lấy top domains từ Tranco (top 10k)
+            api_url = "https://tranco-list.eu/api/domains/com?start=1&end=10000"
+            async with session.get(api_url, timeout=15) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    domains_list = data.get('domains', [])
+                    for domain in domains_list[:limit]:
+                        domain = str(domain).strip().lower()
+                        if domain and '.' in domain:
+                            domains.add(domain)
+        except Exception as e:
+            logger.debug(f"Tranco error: {e}")
+        
+        return list(domains)[:limit]
+    
+    @staticmethod
+    async def _fetch_from_wordpress_api(session: aiohttp.ClientSession, limit: int) -> List[str]:
+        """WordPress.org chính thức API"""
+        domains = set()
+        urls = [
+            "https://api.wordpress.org/themes/info/1.1/?action=query_themes",
+            "https://api.wordpress.org/plugins/info/1.1/?action=query_plugins",
+        ]
+        
+        for api_url in urls:
+            try:
+                async with session.get(api_url, timeout=15) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # Convert to string và tìm domain patterns
+                        text = json.dumps(data).lower()
+                        # Tìm domain patterns
+                        found = re.findall(r'([a-z0-9-]+\.(?:com|net|org|vn|io|co|uk|de|fr|es|it))', text)
+                        for d in found[:limit//2]:
+                            if d and '.' in d:
+                                domains.add(d)
             except Exception:
                 continue
         
         return list(domains)[:limit]
     
     @staticmethod
-    async def _fetch_wordpress_patterns(session: aiohttp.ClientSession, limit: int) -> List[str]:
-        """Dựa trên pattern của WordPress sites"""
-        domains = set()
-        
-        # Các mẫu domain phổ biến của WP sites
-        patterns = [
-            # Blog patterns
-            "{keyword}{number}.{tld}",
-            "{keyword}-{keyword}.{tld}",
-            "my{keyword}.{tld}",
-            "the{keyword}.{tld}",
-            "{keyword}online.{tld}",
-            "{keyword}hub.{tld}",
-            "{keyword}site.{tld}",
-            "{keyword}world.{tld}",
-        ]
-        
-        keywords = [
-            'blog', 'news', 'tech', 'web', 'digital',
-            'media', 'press', 'post', 'article',
-            'shop', 'store', 'market', 'buy',
-            'learn', 'study', 'course', 'edu',
-            'travel', 'tour', 'trip', 'hotel',
-            'food', 'restaurant', 'recipe', 'cook',
-            'health', 'fitness', 'medical', 'care',
-        ]
-        
-        tlds = ['com', 'net', 'org', 'vn', 'io', 'co']
-        
-        # Tạo domain dựa trên pattern
-        for _ in range(limit * 2):  # Tạo nhiều rồi filter
-            pattern = random.choice(patterns)
-            keyword = random.choice(keywords)
-            tld = random.choice(tlds)
-            number = random.choice(['', '1', '2', '2024', '24', ''])
-            
-            if '{keyword}{number}' in pattern:
-                domain = pattern.format(keyword=keyword, number=number, tld=tld)
-            elif '{keyword}-{keyword}' in pattern:
-                domain = pattern.format(keyword=keyword, tld=tld)
-            else:
-                continue
-            
-            domains.add(domain)
-        
-        return list(domains)[:limit]
-    
-    @staticmethod
-    def _get_known_wp_sites(limit: int) -> List[str]:
-        """Danh sách WordPress sites đã biết (hardcoded + từ file)"""
-        # Một số site WordPress phổ biến (ví dụ)
+    def _get_known_wp_sites(limit: int = 100) -> List[str]:
+        """Danh sách WordPress sites đã biết"""
         known_sites = [
+            # Các site mẫu WordPress
+            "wordpress.org",
+            "wordpress.com",
             # Có thể thêm từ file nếu có
-            "example-blog.com",
-            "tech-news.org",
-            "digital-magazine.net",
-            "onlinestore.co",
-            "travel-blog.vn",
-            "food-recipes.io",
-            "health-tips.org",
         ]
         
-        # Thêm các domain pattern
-        for i in range(limit - len(known_sites)):
-            prefix = random.choice(['blog', 'news', 'shop', 'portal'])
+        # Tạo thêm domain pattern
+        for i in range(min(limit - len(known_sites), 50)):
+            prefix = random.choice(['blog', 'news', 'shop', 'portal', 'magazine', 'journal'])
             mid = random.choice(['', '-', ''])
-            suffix = random.choice(['', str(random.randint(1, 99))])
-            tld = random.choice(['com', 'net', 'org'])
+            suffix = random.choice(['', str(random.randint(1, 99)), 'online', 'hub'])
+            tld = random.choice(['com', 'net', 'org', 'vn', 'io', 'co'])
             
-            domain = f"{prefix}{mid}{suffix}.{tld}".replace('..', '.')
-            known_sites.append(domain)
+            domain = f"{prefix}{mid}{suffix}.{tld}".replace('..', '.').replace('-.', '.')
+            if '.' in domain:
+                known_sites.append(domain)
         
         return known_sites[:limit]
+    
+    @staticmethod
+    def _is_high_quality_domain(domain: str) -> bool:
+        """Filter domain cơ bản - loại bỏ domain không hợp lệ"""
+        if not domain or len(domain) > 100 or len(domain) < 4:
+            return False
+        
+        if domain.count('.') < 1:
+            return False
+        
+        # Loại bỏ domain có ký tự không hợp lệ
+        if not re.match(r'^[a-z0-9.-]+$', domain):
+            return False
+        
+        # Loại bỏ domain bắt đầu hoặc kết thúc bằng dấu gạch ngang
+        if domain.startswith('-') or domain.endswith('-'):
+            return False
+        
+        # Loại bỏ domain có hai dấu chấm liên tiếp
+        if '..' in domain:
+            return False
+        
+        # Các TLD phổ biến
+        valid_tlds = ['com', 'net', 'org', 'edu', 'gov', 'mil', 'io', 'co', 
+                     'uk', 'de', 'fr', 'es', 'it', 'vn', 'jp', 'cn', 'au']
+        
+        tld = domain.split('.')[-1].lower()
+        if tld not in valid_tlds:
+            # Vẫn chấp nhận nếu domain dài và có vẻ hợp lệ
+            if len(domain) > 8 and '-' not in domain:
+                return True
+            return False
+        
+        return True
 
 # ================= ENHANCED RATE LIMITER =================
 class SmartRateLimiter:
@@ -670,7 +734,9 @@ class EnhancedWordPressScanner:
             'name': plugin,
             'version': None,
             'suspicious_files': [],
-            'accessible': False
+            'accessible': False,
+            'vulnerabilities': [],
+            'exploits': [] 
         }
         
         # Quick check: plugin directory
@@ -1005,7 +1071,7 @@ async def main():
     
     print("\n" + "=" * 70)
     print("🔍 ENHANCED WORDPRESS VULNERABILITY SCANNER")
-    print("🎯 Professional Edition - Fix All Issues")
+    print("🎯 Professional Edition - Focus on Weak WP Sites")
     print("=" * 70 + "\n")
     
     # Initialize
@@ -1013,7 +1079,7 @@ async def main():
     
     try:
         # Step 1: Fetch HIGH QUALITY domains
-        print("[+] Fetching HIGH QUALITY domains...")
+        print("[+] Fetching HIGH QUALITY domains (focus on weak WP sites)...")
         async with aiohttp.ClientSession() as session:
             domains = await SmartDomainFetcher.fetch_high_quality_domains(session, CONFIG['DOMAIN_LIMIT'])
         
@@ -1022,7 +1088,8 @@ async def main():
             sys.exit(1)
         
         print(f"[+] Đã lấy {len(domains)} domain CHẤT LƯỢNG CAO")
-        print(f"[+] Dự kiến WP detection rate: 40-60% (cao hơn nhiều so với trước)\n")
+        print(f"[+] Chú trọng tìm WordPress yếu qua crt.sh + Common Crawl")
+        print(f"[+] Dự kiến WP detection rate: 50-70%\n")
         
         # Step 2: Setup output
         output_handler = EnhancedOutputHandler(output_file)
