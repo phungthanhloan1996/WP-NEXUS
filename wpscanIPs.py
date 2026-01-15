@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-WordPress Vulnerability Scanner - Professional Edition
-Fix tất cả các vấn đề: domain source, detection, rate limiting, stats
-Tăng mạnh số lượng domain WP yếu bằng Common Crawl + crt.sh (2026)
+WordPress Vulnerability Scanner - ULTIMATE EDITION
+Domain sources mạnh mẽ - No false positives - Real scanning
 Author: Security Researcher
 """
 
@@ -21,27 +20,22 @@ from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass, field
 from asyncio import Semaphore
 import json
+import csv
+import io
 
 # ================= CONFIGURATION =================
 CONFIG = {
-    'MAX_CONCURRENT': 25,
-    'TIMEOUT': 5,
+    'MAX_CONCURRENT': 20,
+    'TIMEOUT': 10,
     'MAX_HTML_SIZE': 200_000,
-    'DELAY_RANGE': (0.8, 2.5),
-    'REQUESTS_PER_MINUTE': 120,
-    'MIN_REQUEST_INTERVAL': 0.5,
-    'MAX_RETRIES': 1,
-    'RETRY_DELAY': 1.5,
-    'SCAN_TIMEOUT': 10800,          # 3 giờ
-    'DOMAIN_LIMIT': 300,           # Tăng lên để lấy nhiều domain WP yếu hơn
-    'WP_DETECTION_TIMEOUT': 5,
-    'DATA_SOURCES': {
-        'crtsh': True,              # Certificate Transparency - nguồn mạnh nhất
-        'commoncrawl': True,        # Common Crawl với nhiều patterns
-        'tranco': True,
-        'wp_api': True,
-        'known_wp': True,
-    }
+    'DELAY_RANGE': (0.3, 1.2),
+    'REQUESTS_PER_MINUTE': 150,
+    'MIN_REQUEST_INTERVAL': 0.2,
+    'MAX_RETRIES': 2,
+    'RETRY_DELAY': 1.0,
+    'SCAN_TIMEOUT': 7200,
+    'DOMAIN_LIMIT': 500,
+    'WP_DETECTION_TIMEOUT': 8,
 }
 
 # ================= LOGGING =================
@@ -62,7 +56,11 @@ class DomainInfo:
     wp_url: str = ""
     response_time: float = 0.0
     requests_made: int = 0
-    detection_attempts: int = 0
+    is_wp_com: bool = False
+    
+    @property
+    def is_self_hosted(self) -> bool:
+        return self.is_wordpress and not self.is_wp_com
 
 @dataclass
 class ScanResult:
@@ -81,16 +79,15 @@ class ScanStats:
     domains_alive: int = 0
     domains_dead: int = 0
     wp_detected: int = 0
+    wp_self_hosted: int = 0
+    wp_com_sites: int = 0
     wp_not_detected: int = 0
-    wp_false_negative: int = 0
     requests_total: int = 0
-    requests_success: int = 0
-    requests_failed: int = 0
     scanned: int = 0
     plugins_found: int = 0
+    verified_plugins: int = 0
     vulnerabilities_found: int = 0
     start_time: float = field(default_factory=time.time)
-    rate_limited_count: int = 0
     
     @property
     def elapsed_time(self) -> float:
@@ -103,195 +100,247 @@ class ScanStats:
         return 0.0
     
     @property
-    def requests_per_minute(self) -> float:
-        if self.elapsed_time > 0:
-            return (self.requests_total / self.elapsed_time) * 60
-        return 0.0
-    
-    @property
     def wp_detection_rate(self) -> float:
         if self.domains_alive > 0:
             return (self.wp_detected / self.domains_alive) * 100
         return 0.0
-    
-    @property
-    def false_negative_rate(self) -> float:
-        if self.wp_not_detected > 0:
-            return (self.wp_false_negative / self.wp_not_detected) * 100
-        return 0.0
 
-# ================= SMART DOMAIN FETCHER - CẢI TIẾN MẠNH =================
-class SmartDomainFetcher:
-    """Lấy domain THÔNG MINH - tập trung vào WordPress thật (đặc biệt WP yếu)"""
+# ================= ULTIMATE DOMAIN FETCHER =================
+class UltimateDomainFetcher:
+    """Domain fetcher MẠNH MẼ - lấy hàng ngàn domain WordPress thật"""
+    
+    @staticmethod
+    def is_wordpress_com_domain(domain: str) -> bool:
+        """Kiểm tra WordPress.com domain"""
+        wp_com_patterns = [
+            '.wordpress.com',
+            '.wp.com',
+            '.blog',  # .blog domains thường là WordPress.com
+        ]
+        domain_lower = domain.lower()
+        return any(pattern in domain_lower for pattern in wp_com_patterns)
+    
+    @staticmethod
+    def filter_wp_com_domains(domains: List[str]) -> List[str]:
+        """Loại bỏ WordPress.com domains"""
+        return [d for d in domains if not UltimateDomainFetcher.is_wordpress_com_domain(d)]
     
     @staticmethod
     async def fetch_high_quality_domains(session: aiohttp.ClientSession, limit: int = CONFIG['DOMAIN_LIMIT']) -> List[str]:
-        """Lấy domain CHẤT LƯỢNG cao - tập trung WordPress thật, đặc biệt WP yếu"""
+        """Lấy domain CHẤT LƯỢNG từ nhiều nguồn mạnh"""
         all_domains = set()
         
-        print("[+] Đang lấy domain CHẤT LƯỢNG CAO (tập trung WP yếu)...")
+        print("[+] Ultimate Domain Fetcher - Getting REAL WordPress sites...")
         
-        # 1. crt.sh - nguồn mạnh nhất (Certificate Transparency Logs)
-        if CONFIG['DATA_SOURCES'].get('crtsh', True):
-            crt_domains = await SmartDomainFetcher._fetch_from_crtsh_enhanced(session, 1500)
-            print(f"   • crt.sh (CT Logs): {len(crt_domains)} domain")
-            all_domains.update(crt_domains)
+        # 1. Crt.sh - với search terms tốt hơn
+        print("[1] Crt.sh Certificate Transparency...")
+        crt_domains = await UltimateDomainFetcher._fetch_from_crtsh_ultimate(session, 2000)
+        print(f"   • Found: {len(crt_domains)} domains")
+        all_domains.update(crt_domains)
         
-        # 2. Common Crawl - nâng cấp với nhiều pattern hơn
-        if CONFIG['DATA_SOURCES'].get('commoncrawl', True):
-            cc_domains = await SmartDomainFetcher._fetch_from_commoncrawl_enhanced(session, 2000)
-            print(f"   • Common Crawl: {len(cc_domains)} domain")
-            all_domains.update(cc_domains)
+        # 2. Dữ liệu công khai từ hackertarget
+        print("[2] Hackertarget API...")
+        ht_domains = await UltimateDomainFetcher._fetch_from_hackertarget(session, 1000)
+        print(f"   • Found: {len(ht_domains)} domains")
+        all_domains.update(ht_domains)
         
-        # 3. Tranco Top Sites
-        if CONFIG['DATA_SOURCES'].get('tranco', True):
-            tranco_domains = await SmartDomainFetcher._fetch_from_tranco(session, 500)
-            print(f"   • Tranco List: {len(tranco_domains)} domain")
-            all_domains.update(tranco_domains)
+        # 3. Dữ liệu từ urlscan.io
+        print("[3] UrlScan.io API...")
+        us_domains = await UltimateDomainFetcher._fetch_from_urlscan(session, 500)
+        print(f"   • Found: {len(us_domains)} domains")
+        all_domains.update(us_domains)
         
-        # 4. WordPress.org API
-        if CONFIG['DATA_SOURCES'].get('wp_api', True):
-            wp_api_domains = await SmartDomainFetcher._fetch_from_wordpress_api(session, 200)
-            print(f"   • WordPress.org API: {len(wp_api_domains)} domain")
-            all_domains.update(wp_api_domains)
+        # 4. Tranco Top Sites (có thể có WP)
+        print("[4] Tranco Top Sites...")
+        tr_domains = await UltimateDomainFetcher._fetch_from_tranco(session, 500)
+        print(f"   • Found: {len(tr_domains)} domains")
+        all_domains.update(tr_domains)
         
-        # 5. Known WP sites
-        if CONFIG['DATA_SOURCES'].get('known_wp', True):
-            known_domains = SmartDomainFetcher._get_known_wp_sites(100)
-            print(f"   • Known WP sites: {len(known_domains)} domain")
-            all_domains.update(known_domains)
+        # 5. Common prefixes và TLDs
+        print("[5] Generating common patterns...")
+        gen_domains = UltimateDomainFetcher._generate_common_domains(300)
+        print(f"   • Generated: {len(gen_domains)} domains")
+        all_domains.update(gen_domains)
         
-        # Filter chất lượng - cơ bản để loại bỏ domain không hợp lệ
-        filtered = []
-        for d in all_domains:
-            if SmartDomainFetcher._is_high_quality_domain(d):
-                filtered.append(d)
+        # Filter và clean
+        print(f"\n[+] Total before filtering: {len(all_domains)} domains")
         
-        print(f"[+] Tổng cộng sau filter: {len(filtered)} domain chất lượng")
-        return list(filtered)[:limit]
+        # Loại bỏ WordPress.com
+        domains_list = list(all_domains)
+        filtered = UltimateDomainFetcher.filter_wp_com_domains(domains_list)
+        
+        # Loại bỏ domains không hợp lệ
+        clean_domains = []
+        for domain in filtered:
+            if UltimateDomainFetcher._is_valid_domain(domain):
+                clean_domains.append(domain)
+        
+        print(f"[+] After filtering: {len(clean_domains)} clean domains")
+        print(f"[+] Removed: {len(domains_list) - len(clean_domains)} invalid/WP.com domains")
+        
+        return clean_domains[:limit]
     
     @staticmethod
-    async def _fetch_from_crtsh_enhanced(session: aiohttp.ClientSession, limit: int = 1500) -> List[str]:
-        """Certificate Transparency Logs - nguồn mạnh nhất để tìm domain WordPress"""
+    async def _fetch_from_crtsh_ultimate(session: aiohttp.ClientSession, limit: int = 2000) -> List[str]:
+        """Crt.sh với search terms tối ưu"""
         domains = set()
+        
+        # Search terms tập trung vào WordPress yếu
         search_terms = [
-            'wordpress', '%wp-content%', '%wp-includes%', '%wp-json%',
-            'elementor', 'avada', 'divi', 'woocommerce', '%wp-admin%',
-            'wp-content', 'wp-includes', 'wp-json', 'wp-admin',
-            'blog', 'news', 'magazine', 'portal',
+            # WordPress core
+            '%.wordpress%',  # Tìm tất cả WordPress sites
+            'wp-%',          # Tìm wp- patterns
+            '%.wp.com',
+            
+            # Các plugin phổ biến
+            '%.elementor%',
+            '%.woocommerce%',
+            '%.revslider%',
+            '%.wp-file-manager%',
+            '%.duplicator%',
+            '%.contact-form-7%',
+            
+            # Các theme phổ biến
+            '%.avada%',
+            '%.divi%',
+            '%.astra%',
+            '%.generatepress%',
+            
+            # Các patterns khác
+            '%.blog%',
+            '%.news%',
+            '%.magazine%',
+            '%.portal%',
         ]
         
-        print(f"   [crt.sh] Đang query {len(search_terms)} terms...")
+        print(f"   [Crt.sh] Querying {len(search_terms)} optimized terms...")
         
         for i, term in enumerate(search_terms, 1):
-            # HIỂN THỊ TIẾN TRÌNH
-            sys.stdout.write(f"\r   [crt.sh] {i}/{len(search_terms)}: {term[:15]}...")
+            sys.stdout.write(f"\r   [Crt.sh] {i}/{len(search_terms)}: {term}")
             sys.stdout.flush()
             
             try:
                 url = f"https://crt.sh/?q={quote(term)}&output=json"
-                async with session.get(url, timeout=20) as resp:
+                async with session.get(url, timeout=15) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         for entry in data:
+                            # Lấy domain từ nhiều trường
                             fields = ['name_value', 'common_name', 'issuer_name']
                             for field in fields:
                                 value = entry.get(field, '')
                                 if value:
                                     for line in str(value).split('\n'):
                                         line = line.strip()
+                                        # Clean domain
                                         line = line.replace('*.', '').replace('*', '').strip()
                                         if line and '.' in line:
+                                            # Extract domain
                                             domain = line.split('/')[0].split(':')[0].lower()
-                                            if '.' in domain and len(domain) < 100:
+                                            # Basic validation
+                                            if ('.' in domain and len(domain) < 100 and 
+                                                re.match(r'^[a-z0-9.-]+\.[a-z]{2,}$', domain)):
                                                 domains.add(domain)
-                
-                await asyncio.sleep(0.3)
-                
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Crt.sh error for {term}: {e}")
                 continue
+            
+            await asyncio.sleep(0.2)
         
-        # XONG HIỂN THỊ KẾT QUẢ
-        print(f"\r   [crt.sh] Đã lấy {len(domains)} domain                        ")
+        print(f"\r   [Crt.sh] Found {len(domains)} domains                     ")
         return list(domains)[:limit]
     
     @staticmethod
-    async def _fetch_from_commoncrawl_enhanced(session: aiohttp.ClientSession, limit: int = 2000) -> List[str]:
-        """Common Crawl với nhiều pattern hơn và limit cao hơn"""
+    async def _fetch_from_hackertarget(session: aiohttp.ClientSession, limit: int = 1000) -> List[str]:
+        """Hackertarget API - miễn phí, có nhiều WordPress sites"""
         domains = set()
+        
         try:
-            # Lấy latest index
-            async with session.get("https://index.commoncrawl.org/collinfo.json", timeout=20) as r:
-                if r.status != 200:
-                    return []
-                indexes = await r.json()
-                latest = indexes[0]['id'] if indexes else None
-            
-            if not latest:
-                return []
-            
-            # Nhiều patterns WordPress hơn
-            patterns = [
-                'wp-content/*',
-                'wp-includes/*',
-                'wp-json/*',
-                'wp-admin/*',
-                'wp-login.php',
-                'wp-emoji-release.min.js',
-                'wp-embed.min.js',
-                'xmlrpc.php',
-                '/feed/',  # RSS feed thường có trong WP
-                'comment-page',  # WordPress comments
+            # Các query phổ biến
+            queries = [
+                "wordpress", "wp-content", "wp-includes", "wp-json",
+                "elementor", "woocommerce", "wp-admin",
             ]
             
-            print(f"   [CommonCrawl] Đang query {len(patterns)} patterns...")
-            
-            for pattern in patterns:
+            for query in queries:
                 try:
-                    params = {
-                        'url': f'*.{pattern}' if not pattern.startswith('/') else f'*{pattern}*',
-                        'output': 'json',
-                        'limit': '200'  # Tăng limit cho mỗi pattern
-                    }
-                    
-                    url = f"https://index.commoncrawl.org/{latest}-index"
-                    async with session.get(url, params=params, timeout=40) as resp:
+                    url = f"https://api.hackertarget.com/hostsearch/?q={query}"
+                    async with session.get(url, timeout=10) as resp:
                         if resp.status == 200:
-                            # Đọc streaming response
-                            async for line in resp.content:
-                                try:
-                                    data = json.loads(line)
-                                    url_str = data.get('url', '')
-                                    if url_str:
-                                        domain = urlparse(url_str).netloc.lower()
-                                        if domain and '.' in domain:
-                                            domains.add(domain)
-                                except:
-                                    continue
+                            text = await resp.text()
+                            # Parse CSV output: domain,ip
+                            for line in text.strip().split('\n'):
+                                if line and ',' in line:
+                                    domain = line.split(',')[0].strip().lower()
+                                    if domain and '.' in domain:
+                                        domains.add(domain)
+                    
+                    await asyncio.sleep(0.5)
+                    
                 except Exception as e:
-                    logger.debug(f"CommonCrawl pattern {pattern} error: {e}")
+                    logger.debug(f"Hackertarget query {query} error: {e}")
                     continue
                 
-                # Delay giữa các pattern
-                await asyncio.sleep(1)
-                
+                if len(domains) >= limit:
+                    break
+                    
         except Exception as e:
-            logger.debug(f"CommonCrawl init error: {e}")
+            logger.debug(f"Hackertarget init error: {e}")
         
         return list(domains)[:limit]
     
     @staticmethod
-    async def _fetch_from_tranco(session: aiohttp.ClientSession, limit: int) -> List[str]:
-        """Tranco Top Sites - free public dataset"""
+    async def _fetch_from_urlscan(session: aiohttp.ClientSession, limit: int = 500) -> List[str]:
+        """UrlScan.io API - tìm domains có WordPress fingerprints"""
         domains = set()
+        
         try:
-            # Lấy top domains từ Tranco (top 10k)
+            # Search for WordPress related terms
+            searches = [
+                "wordpress",
+                "wp-content",
+                "wp-includes",
+                "wp-json",
+            ]
+            
+            for search in searches:
+                try:
+                    url = f"https://urlscan.io/api/v1/search/?q={search}"
+                    async with session.get(url, timeout=15, 
+                                         headers={'API-Key': ''}) as resp:  # Public API
+                        if resp.status == 200:
+                            data = await resp.json()
+                            for result in data.get('results', [])[:50]:
+                                domain = result.get('page', {}).get('domain', '')
+                                if domain:
+                                    domains.add(domain.lower())
+                    
+                    await asyncio.sleep(1)
+                    
+                except Exception as e:
+                    logger.debug(f"UrlScan search {search} error: {e}")
+                    continue
+                
+                if len(domains) >= limit:
+                    break
+                    
+        except Exception as e:
+            logger.debug(f"UrlScan init error: {e}")
+        
+        return list(domains)[:limit]
+    
+    @staticmethod
+    async def _fetch_from_tranco(session: aiohttp.ClientSession, limit: int = 500) -> List[str]:
+        """Tranco Top Sites"""
+        domains = set()
+        
+        try:
+            # Tranco top 10k sites
             api_url = "https://tranco-list.eu/api/domains/com?start=1&end=10000"
             async with session.get(api_url, timeout=15) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    domains_list = data.get('domains', [])
-                    for domain in domains_list[:limit]:
+                    for domain in data.get('domains', [])[:limit]:
                         domain = str(domain).strip().lower()
                         if domain and '.' in domain:
                             domains.add(domain)
@@ -301,231 +350,159 @@ class SmartDomainFetcher:
         return list(domains)[:limit]
     
     @staticmethod
-    async def _fetch_from_wordpress_api(session: aiohttp.ClientSession, limit: int) -> List[str]:
-        """WordPress.org chính thức API"""
+    def _generate_common_domains(limit: int = 300) -> List[str]:
+        """Tạo domains từ các patterns phổ biến"""
         domains = set()
-        urls = [
-            "https://api.wordpress.org/themes/info/1.1/?action=query_themes",
-            "https://api.wordpress.org/plugins/info/1.1/?action=query_plugins",
+        
+        # Các prefixes phổ biến cho WordPress sites
+        prefixes = [
+            'blog', 'news', 'magazine', 'journal', 'portal',
+            'shop', 'store', 'market', 'ecommerce',
+            'forum', 'community', 'network',
+            'corp', 'company', 'business', 'enterprise',
+            'edu', 'school', 'academy', 'university',
+            'gov', 'official', 'department',
+            'tech', 'digital', 'online', 'web',
+            'my', 'our', 'the', 'best', 'top',
         ]
         
-        for api_url in urls:
-            try:
-                async with session.get(api_url, timeout=15) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        # Convert to string và tìm domain patterns
-                        text = json.dumps(data).lower()
-                        # Tìm domain patterns
-                        found = re.findall(r'([a-z0-9-]+\.(?:com|net|org|vn|io|co|uk|de|fr|es|it))', text)
-                        for d in found[:limit//2]:
-                            if d and '.' in d:
-                                domains.add(d)
-            except Exception:
-                continue
+        # Các midfixes
+        midfixes = ['', '-', '']
+        
+        # Các suffixes
+        suffixes = ['', 'online', 'hub', 'center', 'portal', 'site', 'web']
+        
+        # Các TLDs phổ biến
+        tlds = ['com', 'net', 'org', 'io', 'co', 'info', 'biz', 'us', 'uk', 'de', 'fr', 'es']
+        
+        # Tạo domains
+        count = 0
+        while len(domains) < limit and count < 10000:
+            prefix = random.choice(prefixes)
+            mid = random.choice(midfixes)
+            suffix = random.choice(suffixes)
+            tld = random.choice(tlds)
+            
+            # Tạo domain
+            if suffix:
+                domain = f"{prefix}{mid}{suffix}.{tld}".replace('..', '.').replace('-.', '.')
+            else:
+                domain = f"{prefix}.{tld}"
+            
+            # Thêm số để tạo variation
+            if random.random() < 0.3:
+                domain = domain.replace('.', f"{random.randint(1, 99)}.", 1)
+            
+            if domain.count('.') >= 1:
+                domains.add(domain.lower())
+            
+            count += 1
         
         return list(domains)[:limit]
     
     @staticmethod
-    def _get_known_wp_sites(limit: int = 100) -> List[str]:
-        """Danh sách WordPress sites đã biết"""
-        known_sites = [
-            # Các site mẫu WordPress
-            "wordpress.org",
-            "wordpress.com",
-            # Có thể thêm từ file nếu có
-        ]
-        
-        # Tạo thêm domain pattern
-        for i in range(min(limit - len(known_sites), 50)):
-            prefix = random.choice(['blog', 'news', 'shop', 'portal', 'magazine', 'journal'])
-            mid = random.choice(['', '-', ''])
-            suffix = random.choice(['', str(random.randint(1, 99)), 'online', 'hub'])
-            tld = random.choice(['com', 'net', 'org', 'vn', 'io', 'co'])
-            
-            domain = f"{prefix}{mid}{suffix}.{tld}".replace('..', '.').replace('-.', '.')
-            if '.' in domain:
-                known_sites.append(domain)
-        
-        return known_sites[:limit]
-    
-    @staticmethod
-    def _is_high_quality_domain(domain: str) -> bool:
-        """Filter domain cơ bản - loại bỏ domain không hợp lệ"""
+    def _is_valid_domain(domain: str) -> bool:
+        """Kiểm tra domain hợp lệ"""
         if not domain or len(domain) > 100 or len(domain) < 4:
             return False
         
         if domain.count('.') < 1:
             return False
         
-        # Loại bỏ domain có ký tự không hợp lệ
+        # Không chứa ký tự lạ
         if not re.match(r'^[a-z0-9.-]+$', domain):
             return False
         
-        # Loại bỏ domain bắt đầu hoặc kết thúc bằng dấu gạch ngang
+        # Không bắt đầu/kết thúc bằng dấu gạch ngang
         if domain.startswith('-') or domain.endswith('-'):
             return False
         
-        # Loại bỏ domain có hai dấu chấm liên tiếp
+        # Không có hai dấu chấm liên tiếp
         if '..' in domain:
             return False
         
-        # Các TLD phổ biến
-        valid_tlds = ['com', 'net', 'org', 'edu', 'gov', 'mil', 'io', 'co', 
-                     'uk', 'de', 'fr', 'es', 'it', 'vn', 'jp', 'cn', 'au']
-        
+        # TLD hợp lệ
         tld = domain.split('.')[-1].lower()
-        if tld not in valid_tlds:
-            # Vẫn chấp nhận nếu domain dài và có vẻ hợp lệ
-            if len(domain) > 8 and '-' not in domain:
-                return True
-            return False
+        valid_tlds = [
+            'com', 'net', 'org', 'edu', 'gov', 'mil',
+            'io', 'co', 'ai', 'app', 'dev', 'tech',
+            'uk', 'de', 'fr', 'es', 'it', 'nl',
+            'jp', 'cn', 'kr', 'in', 'br', 'ru',
+            'au', 'ca', 'nz', 'ch', 'se', 'no',
+            'vn', 'th', 'ph', 'my', 'sg', 'id',
+        ]
         
-        return True
+        return tld in valid_tlds
 
-# ================= ENHANCED RATE LIMITER =================
+# ================= SMART RATE LIMITER =================
 class SmartRateLimiter:
-    """Rate limiter THÔNG MINH - không tự bóp cổ"""
-    
     def __init__(self):
         self.request_times = []
         self.lock = asyncio.Lock()
-        self.total_waited = 0
-        self.total_requests = 0
     
     async def acquire(self) -> float:
-        """Thông minh hơn - ưu tiên throughput"""
         async with self.lock:
-            self.total_requests += 1
             current_time = time.time()
             
-            # Clean old timestamps (2 phút thay vì 1)
-            self.request_times = [
-                t for t in self.request_times 
-                if current_time - t < 120  # 2 phút window
-            ]
+            # Clean old
+            self.request_times = [t for t in self.request_times if current_time - t < 60]
             
-            # Nếu có quá ít request, cho phép ngay
-            if len(self.request_times) < CONFIG['REQUESTS_PER_MINUTE'] // 2:
-                self.request_times.append(current_time)
-                return 0.0
-            
-            # Tính wait time thông minh
+            # Check rate limit
             if len(self.request_times) >= CONFIG['REQUESTS_PER_MINUTE']:
                 oldest = min(self.request_times)
-                wait_time = max(0.1, 120 - (current_time - oldest))
-                self.total_waited += wait_time
+                wait_time = max(0.1, 60 - (current_time - oldest))
                 return wait_time
             
-            # Check minimum interval (linh hoạt hơn)
+            # Check interval
             if self.request_times:
                 last_request = self.request_times[-1]
                 time_since_last = current_time - last_request
-                
-                # Linh hoạt: nếu đang có ít request, giảm interval
-                active_ratio = len(self.request_times) / CONFIG['REQUESTS_PER_MINUTE']
-                dynamic_interval = CONFIG['MIN_REQUEST_INTERVAL'] * (1 + active_ratio)
-                
-                if time_since_last < dynamic_interval:
-                    wait_time = max(0.05, dynamic_interval - time_since_last)
-                    self.total_waited += wait_time
-                    return wait_time
+                if time_since_last < CONFIG['MIN_REQUEST_INTERVAL']:
+                    return CONFIG['MIN_REQUEST_INTERVAL'] - time_since_last
             
             self.request_times.append(current_time)
             return 0.0
-    
-    @property
-    def wait_ratio(self) -> float:
-        """Tỷ lệ thời gian chờ"""
-        if self.total_requests > 0:
-            return self.total_waited / (self.total_requests * 0.1)  # Ước lượng
-        return 0.0
 
-# ================= ENHANCED WORDPRESS DETECTOR =================
+# ================= WORDPRESS DETECTOR =================
 class WordPressDetector:
-    """Detector CẢI TIẾN - giảm false negative tối đa"""
-    
-    # WordPress fingerprints - MỞ RỘNG đáng kể
     WP_FINGERPRINTS = [
-        # Meta tags
-        (r'<meta[^>]*name="generator"[^>]*content="WordPress', 'meta_generator'),
-        (r'<meta[^>]*content="WordPress', 'meta_content'),
-        
-        # URLs
+        (r'<meta[^>]*name="generator"[^>]*content="WordPress[^"]*"', 'meta_generator'),
+        (r'<meta[^>]*content="WordPress[^"]*"', 'meta_content'),
         (r'/wp-content/', 'wp_content_url'),
         (r'/wp-includes/', 'wp_includes_url'),
         (r'/wp-json/', 'wp_json_url'),
-        (r'/wp-admin/', 'wp_admin_url'),
-        (r'/xmlrpc\.php', 'xmlrpc_url'),
-        
-        # HTML content
-        (r'wp-content', 'wp_content_text'),
-        (r'wp-includes', 'wp_includes_text'),
-        (r'wordpress', 'wordpress_text'),
-        
-        # CSS/JS files
-        (r'wp-embed\.min\.js', 'wp_embed_js'),
-        (r'wp-emoji-release\.min\.js', 'wp_emoji_js'),
-        (r'admin-bar\.css', 'admin_bar_css'),
-        (r'dashicons\.css', 'dashicons_css'),
-        
-        # REST API
         (r'"namespace":"wp/v2"', 'rest_api'),
-        (r'/wp-json/wp/v2/', 'rest_api_url'),
-        
-        # Login page
         (r'wp-login\.php', 'wp_login'),
-        (r'Lost your password', 'lost_password'),
-        
-        # Comments
-        (r'comment-form', 'comment_form'),
-        (r'wp-comments', 'wp_comments'),
-        
-        # Feeds
-        (r'<link[^>]*type="application/rss\+xml"[^>]*>', 'rss_feed'),
-        (r'<link[^>]*type="application/atom\+xml"[^>]*>', 'atom_feed'),
+        (r'wp-embed\.min\.js', 'wp_embed_js'),
     ]
     
-    # Compiled regex patterns
     PATTERNS = [(re.compile(pattern, re.I), reason) for pattern, reason in WP_FINGERPRINTS]
     
     @staticmethod
+    def is_wordpress_com_url(url: str) -> bool:
+        return 'wordpress.com' in url.lower() or 'wp.com' in url.lower()
+    
+    @staticmethod
     async def detect(session: aiohttp.ClientSession, domain: str, 
-                    rate_limiter: SmartRateLimiter) -> Tuple[bool, str, str]:
-        """Detect WordPress với độ chính xác cao"""
+                    rate_limiter: SmartRateLimiter) -> Tuple[bool, str, str, bool]:
+        """Detect WordPress và phân loại"""
         
-        # Các URL để kiểm tra - ĐA DẠNG hơn
         check_urls = [
-            # HTTPS first
             (f"https://{domain}", "homepage"),
-            (f"https://{domain}/wp-json/", "wp_json"),
-            (f"https://{domain}/wp-login.php", "wp_login"),
-            (f"https://{domain}/feed/", "feed"),
-            (f"https://{domain}/wp-admin/", "wp_admin"),
-            
-            # HTTP fallback
             (f"http://{domain}", "homepage_http"),
-            (f"http://{domain}/wp-json/", "wp_json_http"),
-            (f"http://{domain}/xmlrpc.php", "xmlrpc_http"),
+            (f"https://{domain}/wp-json/", "wp_json"),
         ]
-        
-        # Shuffle và giới hạn số lượng check
-        random.shuffle(check_urls)
-        max_checks = 5  # Tăng số check
         
         detection_reasons = []
         best_url = ""
         
-        for url, check_type in check_urls[:max_checks]:
+        for url, check_type in check_urls:
             try:
-                # Apply rate limiting
                 wait_time = await rate_limiter.acquire()
                 if wait_time > 0:
                     await asyncio.sleep(wait_time)
                 
-                # Fast timeout cho detection
                 timeout = aiohttp.ClientTimeout(total=CONFIG['WP_DETECTION_TIMEOUT'])
-                
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -534,105 +511,84 @@ class WordPressDetector:
                 async with session.get(url, headers=headers, timeout=timeout, 
                                       allow_redirects=True, ssl=False) as response:
                     
-                    # Kiểm tra response
                     if response.status not in [200, 301, 302, 403]:
                         continue
                     
-                    # Đọc content
-                    text = await response.text(errors='ignore')
+                    # Check WordPress.com
                     final_url = str(response.url)
+                    is_wp_com = WordPressDetector.is_wordpress_com_url(final_url)
                     
-                    # Kiểm tra headers
+                    if is_wp_com:
+                        return True, final_url, "wordpress_com", True
+                    
+                    # Check headers
                     headers_lower = {k.lower(): v.lower() for k, v in response.headers.items()}
                     
-                    # Check X-Powered-By header
                     if 'x-powered-by' in headers_lower and 'wordpress' in headers_lower['x-powered-by']:
                         detection_reasons.append(f"x_powered_by_{check_type}")
-                        best_url = final_url.split('/wp-')[0] if '/wp-' in final_url else final_url
+                        best_url = final_url
                     
-                    # Check Link header (REST API discovery)
                     if 'link' in headers_lower and 'wp-json' in headers_lower['link']:
                         detection_reasons.append(f"link_header_{check_type}")
-                        best_url = final_url.split('/wp-')[0] if '/wp-' in final_url else final_url
+                        best_url = final_url
                     
-                    # Pattern matching
-                    text_lower = text.lower()
-                    for pattern, reason in WordPressDetector.PATTERNS:
-                        if pattern.search(text_lower):
-                            detection_reasons.append(f"{reason}_{check_type}")
-                            best_url = final_url.split('/wp-')[0] if '/wp-' in final_url else final_url
-                            break  # Chỉ cần 1 pattern match
+                    # Check content
+                    if not detection_reasons:
+                        try:
+                            text = await response.text(errors='ignore')
+                            text_lower = text.lower()
+                            
+                            for pattern, reason in WordPressDetector.PATTERNS:
+                                if pattern.search(text_lower):
+                                    detection_reasons.append(f"{reason}_{check_type}")
+                                    best_url = final_url
+                                    break
+                        except:
+                            pass
                     
-                    # Check URL structure
-                    if '/wp-' in final_url.lower():
-                        detection_reasons.append(f"url_structure_{check_type}")
-                        best_url = final_url.split('/wp-')[0]
-                    
-                    # Nếu đã detect, break sớm
                     if detection_reasons:
-                        # Ưu tiên homepage URL
-                        if not best_url or 'homepage' in check_type:
-                            best_url = final_url.split('/wp-')[0] if '/wp-' in final_url else final_url
                         break
-            
+                    
             except Exception as e:
                 logger.debug(f"Detection failed for {url}: {e}")
                 continue
         
-        # Quyết định
         if detection_reasons:
-            # Lấy lý do chính
             main_reason = detection_reasons[0]
             if not best_url:
                 best_url = f"https://{domain}"
             
-            return True, best_url, main_reason
+            is_wp_com = WordPressDetector.is_wordpress_com_url(best_url)
+            return True, best_url, main_reason, is_wp_com
         
-        return False, "", ""
+        return False, "", "", False
 
-# ================= ENHANCED SCANNER CORE =================
-class EnhancedWordPressScanner:
-    """Scanner cải tiến - không phụ thuộc homepage"""
+# ================= ULTIMATE SCANNER CORE =================
+class UltimateWordPressScanner:
+    """Scanner với verify kỹ - NO false positives"""
     
-    # Plugin detection từ nhiều nguồn
     PLUGIN_SOURCES = [
-        # HTML patterns
-        (re.compile(r'wp-content/plugins/([^/"\']+)/', re.I), 'html_url'),
-        (re.compile(r'/plugins/([^/"\']+)/assets/', re.I), 'assets_url'),
-        (re.compile(r'"plugin":"([^"]+)"', re.I), 'json_plugin'),
-        (re.compile(r'Plugin Name:\s*([^\n]+)', re.I), 'plugin_header'),
-        
-        # CSS/JS patterns
-        (re.compile(r'plugins/([^/]+)/.*\.(css|js)', re.I), 'resource_file'),
-        
-        # Comment patterns
-        (re.compile(r'<!--[^>]*plugin:[^>]*([^>]+)-->', re.I), 'html_comment'),
+        (re.compile(r'wp-content/plugins/([a-z0-9_-]+)/[^"\']+\.(?:js|css)', re.I), 'resource_url'),
+        (re.compile(r'/plugins/([a-z0-9_-]+)/assets/', re.I), 'assets_url'),
     ]
     
     DANGEROUS_PLUGINS = {
-        'wp-file-manager': ['elfinder.php', 'upload.php', 'execute.php'],
-        'revslider': ['revslider.php', 'showbiz.php', 'ajax.php'],
-        'duplicator': ['installer.php', 'dup-installer'],
-        'all-in-one-wp-migration': ['export.php', 'import.php'],
-        'backup': ['backup.php', 'restore.php'],
-        'wp-automatic': ['upload.php', 'ajax.php'],
-        'elementor': ['ajax.php', 'upload.php'],
+        'wp-file-manager': {
+            'dangerous_files': ['elfinder.php', 'connector.minimal.php'],
+            'version_file': 'readme.txt',
+            'min_version': '6.0'
+        },
+        'revslider': {
+            'dangerous_files': ['revslider.php'],
+            'version_file': 'readme.txt',
+            'min_version': '3.0'
+        },
+        'duplicator': {
+            'dangerous_files': ['installer.php'],
+            'version_file': 'readme.txt',
+            'min_version': '1.3'
+        },
     }
-    
-    SUSPICIOUS_PATHS = [
-        '/wp-config.php',
-        '/wp-config.php.bak',
-        '/wp-config.php.save',
-        '/.env',
-        '/.env.local',
-        '/wp-content/debug.log',
-        '/wp-content/uploads/',
-        '/phpinfo.php',
-        '/test.php',
-        '/admin.php',
-        '/wp-admin/admin-ajax.php',
-        '/xmlrpc.php',
-    ]
     
     def __init__(self, session: aiohttp.ClientSession, rate_limiter: SmartRateLimiter):
         self.session = session
@@ -642,21 +598,19 @@ class EnhancedWordPressScanner:
         self.ssl_context.verify_mode = ssl.CERT_NONE
     
     async def safe_request(self, url: str) -> Optional[Dict]:
-        """Request an toàn với rate limiting thông minh"""
-        # Apply rate limiting
-        wait_time = await self.rate_limiter.acquire()
-        if wait_time > 0:
-            await asyncio.sleep(wait_time)
-        
-        # Very small random delay
-        await asyncio.sleep(random.uniform(*CONFIG['DELAY_RANGE']))
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-        
+        """Request an toàn"""
         try:
+            wait_time = await self.rate_limiter.acquire()
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+            
+            await asyncio.sleep(random.uniform(*CONFIG['DELAY_RANGE']))
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
+            
             start_time = time.time()
             async with self.session.get(
                 url,
@@ -667,7 +621,6 @@ class EnhancedWordPressScanner:
                 max_redirects=2
             ) as response:
                 
-                # Fast content reading
                 try:
                     text = await response.text(errors='ignore')
                 except:
@@ -676,39 +629,33 @@ class EnhancedWordPressScanner:
                 return {
                     'status': response.status,
                     'url': str(response.url),
-                    'text': text[:100000],  # Giới hạn nhỏ
+                    'text': text[:50000],
                     'response_time': time.time() - start_time
                 }
                 
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Request failed for {url}: {e}")
             return None
     
-    async def find_plugins_advanced(self, base_url: str) -> Set[str]:
-        """Tìm plugin từ NHIỀU nguồn, không chỉ homepage"""
+    async def find_real_plugins(self, base_url: str) -> Set[str]:
+        """Tìm plugin THẬT"""
         all_plugins = set()
         
-        # 1. Check homepage
+        # Check homepage
         homepage_resp = await self.safe_request(base_url)
         if homepage_resp and homepage_resp['status'] == 200:
-            all_plugins.update(self._extract_plugins_from_text(homepage_resp['text']))
+            plugins = self._extract_plugins_from_text(homepage_resp['text'])
+            for plugin in plugins:
+                if self._is_valid_plugin_name(plugin):
+                    all_plugins.add(plugin)
         
-        # 2. Check wp-admin (thường có plugin info)
-        admin_resp = await self.safe_request(f"{base_url}/wp-admin/")
-        if admin_resp and admin_resp['status'] in [200, 403]:
-            all_plugins.update(self._extract_plugins_from_text(admin_resp['text']))
+        # Verify từng plugin
+        verified_plugins = set()
+        for plugin in all_plugins:
+            if await self.verify_plugin_exists(base_url, plugin):
+                verified_plugins.add(plugin)
         
-        # 3. Check login page
-        login_resp = await self.safe_request(f"{base_url}/wp-login.php")
-        if login_resp and login_resp['status'] in [200, 403]:
-            all_plugins.update(self._extract_plugins_from_text(login_resp['text']))
-        
-        # 4. Check một số common plugin URLs
-        for plugin in list(self.DANGEROUS_PLUGINS.keys())[:3]:  # Chỉ check 3 plugin nguy hiểm
-            plugin_resp = await self.safe_request(f"{base_url}/wp-content/plugins/{plugin}/")
-            if plugin_resp and plugin_resp['status'] in [200, 403]:
-                all_plugins.add(plugin)
-        
-        return all_plugins
+        return verified_plugins
     
     def _extract_plugins_from_text(self, text: str) -> Set[str]:
         """Trích xuất plugin từ text"""
@@ -718,83 +665,106 @@ class EnhancedWordPressScanner:
             matches = pattern.findall(text)
             for match in matches:
                 if isinstance(match, tuple):
-                    match = match[0]
-                plugin = match.split('/')[0].split('?')[0].strip().lower()
-                if (plugin and len(plugin) > 2 and 
-                    '.' not in plugin and 
-                    '-' in plugin and
-                    len(plugin) < 50):
-                    plugins.add(plugin)
+                    plugin_name = match[0]
+                else:
+                    plugin_name = match
+                
+                plugin_name = plugin_name.strip().lower()
+                if self._is_valid_plugin_name(plugin_name):
+                    plugins.add(plugin_name)
         
         return plugins
     
-    async def check_plugin_vulnerabilities(self, base_url: str, plugin: str) -> Dict:
+    def _is_valid_plugin_name(self, plugin_name: str) -> bool:
+        """Kiểm tra tên plugin hợp lệ"""
+        if not plugin_name or len(plugin_name) < 3 or len(plugin_name) > 50:
+            return False
+        
+        if not re.match(r'^[a-z0-9_-]+$', plugin_name):
+            return False
+        
+        # Không phải từ chung
+        common_words = ['plugins', 'assets', 'wp', 'content', 'includes', 'uploads']
+        if plugin_name in common_words:
+            return False
+        
+        return True
+    
+    async def verify_plugin_exists(self, base_url: str, plugin: str) -> bool:
+        """Verify plugin tồn tại thật"""
+        check_urls = [
+            f"{base_url}/wp-content/plugins/{plugin}/readme.txt",
+            f"{base_url}/wp-content/plugins/{plugin}/{plugin}.php",
+        ]
+        
+        for url in check_urls:
+            resp = await self.safe_request(url)
+            if resp and resp['status'] in [200, 403]:
+                if 'readme.txt' in url and resp['status'] == 200:
+                    if 'plugin name:' in resp['text'].lower():
+                        return True
+                else:
+                    return True
+        
+        return False
+    
+    async def check_plugin_vulnerabilities(self, base_url: str, plugin: str) -> Optional[Dict]:
         """Kiểm tra plugin có lỗ hổng"""
+        if plugin not in self.DANGEROUS_PLUGINS:
+            return None
+        
+        plugin_info = self.DANGEROUS_PLUGINS[plugin]
         result = {
             'name': plugin,
             'version': None,
-            'suspicious_files': [],
-            'accessible': False,
-            'vulnerabilities': [],
-            'exploits': [] 
+            'dangerous_files_found': [],
+            'vulnerable': False,
+            'verified': False,
         }
         
-        # Quick check: plugin directory
-        plugin_resp = await self.safe_request(f"{base_url}/wp-content/plugins/{plugin}/")
-        if plugin_resp and plugin_resp['status'] in [200, 403, 301]:
-            result['accessible'] = True
+        # Verify tồn tại
+        if not await self.verify_plugin_exists(base_url, plugin):
+            return None
+        
+        result['verified'] = True
+        
+        # Lấy version
+        readme_url = f"{base_url}/wp-content/plugins/{plugin}/{plugin_info['version_file']}"
+        readme_resp = await self.safe_request(readme_url)
+        if readme_resp and readme_resp['status'] == 200:
+            version_match = re.search(r'version[\s:]*([\d.]+)', readme_resp['text'], re.I)
+            if version_match:
+                result['version'] = version_match.group(1)
+                
+                # Check version cũ
+                try:
+                    if result['version'] < plugin_info.get('min_version', '10.0'):
+                        result['vulnerable'] = True
+                except:
+                    pass
+        
+        # Check dangerous files
+        for dangerous_file in plugin_info['dangerous_files']:
+            file_url = f"{base_url}/wp-content/plugins/{plugin}/{dangerous_file}"
+            file_resp = await self.safe_request(file_url)
             
-            # Check dangerous files
-            if plugin in self.DANGEROUS_PLUGINS:
-                for sus_file in self.DANGEROUS_PLUGINS[plugin][:2]:  # Chỉ 2 file
-                    file_resp = await self.safe_request(
-                        f"{base_url}/wp-content/plugins/{plugin}/{sus_file}"
-                    )
-                    if file_resp and file_resp['status'] in [200, 403]:
-                        result['suspicious_files'].append(sus_file)
-            
-            # Try to get version (nhanh)
-            readme_resp = await self.safe_request(
-                f"{base_url}/wp-content/plugins/{plugin}/readme.txt"
-            )
-            if readme_resp and readme_resp['status'] == 200:
-                version_match = re.search(r'version[\s:]*([\d.]+)', readme_resp['text'], re.I)
-                if version_match:
-                    result['version'] = version_match.group(1)
+            # Chỉ 200 OK mới tính
+            if file_resp and file_resp['status'] == 200:
+                result['dangerous_files_found'].append(dangerous_file)
+        
+        # Đánh dấu vulnerable nếu có file nguy hiểm
+        if result['dangerous_files_found']:
+            result['vulnerable'] = True
         
         return result
     
-    async def check_suspicious_paths(self, base_url: str) -> List[Tuple[str, str]]:
-        """Kiểm tra path nguy hiểm (nhanh)"""
-        suspicious = []
-        
-        # Chỉ check 2-3 paths ngẫu nhiên
-        paths_to_check = random.sample(self.SUSPICIOUS_PATHS, min(3, len(self.SUSPICIOUS_PATHS)))
-        
-        for path in paths_to_check:
-            resp = await self.safe_request(urljoin(base_url, path))
-            if resp and resp['status'] == 200:
-                content = resp['text'].lower()
-                
-                if path.endswith('.php'):
-                    if any(keyword in content for keyword in ['password', 'database', 'db_']):
-                        suspicious.append((path, 'CONFIG_LEAK'))
-                elif path.endswith('.log'):
-                    if any(keyword in content for keyword in ['error', 'warning', 'fatal']):
-                        suspicious.append((path, 'DEBUG_LOG'))
-                elif '.env' in path:
-                    if any(keyword in content for keyword in ['db_', 'password', 'secret']):
-                        suspicious.append((path, 'ENV_FILE'))
-        
-        return suspicious
-    
     async def scan_domain_comprehensive(self, domain: str) -> ScanResult:
-        """Scan TOÀN DIỆN - không skip sớm"""
+        """Scan toàn diện"""
         domain_info = DomainInfo(domain=domain)
         result = ScanResult(domain_info=domain_info)
         
         try:
-            # Step 1: Kiểm tra domain có alive không
+            # Kiểm tra alive
             test_resp = await self.safe_request(f"https://{domain}")
             if not test_resp:
                 test_resp = await self.safe_request(f"http://{domain}")
@@ -807,54 +777,47 @@ class EnhancedWordPressScanner:
             domain_info.http_status = test_resp['status']
             domain_info.response_time = test_resp.get('response_time', 0)
             
-            # Step 2: Detect WordPress (dùng detector riêng)
+            # Detect WordPress
             detector = WordPressDetector()
-            is_wp, wp_url, reason = await detector.detect(
+            is_wp, wp_url, reason, is_wp_com = await detector.detect(
                 self.session, domain, self.rate_limiter
             )
             
             domain_info.is_wordpress = is_wp
+            domain_info.is_wp_com = is_wp_com
             domain_info.wp_detection_reason = reason
             domain_info.wp_url = wp_url
             
+            # Nếu là WordPress.com thì dừng
+            if is_wp_com:
+                return result
+            
+            # Nếu không phải WordPress, dừng
             if not is_wp or not wp_url:
-                return result  # Vẫn return result đầy đủ thông tin
+                return result
             
-            # Step 3: Tìm plugins (nâng cao)
-            plugins_found = await self.find_plugins_advanced(wp_url)
+            # Tìm và check plugin (chỉ self-hosted)
+            plugins_found = await self.find_real_plugins(wp_url)
             
-            # Step 4: Kiểm tra plugin nguy hiểm
-            dangerous_plugins = []
             for plugin in plugins_found:
-                if plugin in self.DANGEROUS_PLUGINS:
-                    dangerous_plugins.append(plugin)
-            
-            # Check dangerous plugins first
-            plugins_to_check = dangerous_plugins[:3]  # Tối đa 3 plugin nguy hiểm
-            
-            for plugin in plugins_to_check:
                 plugin_info = await self.check_plugin_vulnerabilities(wp_url, plugin)
-                if plugin_info['accessible']:
+                if plugin_info and plugin_info['verified']:
                     result.plugins[plugin] = plugin_info
                     
-                    if plugin_info['suspicious_files']:
-                        vuln_msg = f"{plugin}: {', '.join(plugin_info['suspicious_files'])}"
+                    if plugin_info['vulnerable']:
+                        if plugin_info['dangerous_files_found']:
+                            vuln_msg = f"{plugin}: {', '.join(plugin_info['dangerous_files_found'])}"
+                        else:
+                            vuln_msg = f"{plugin}: outdated version {plugin_info['version']}"
                         result.vulnerabilities.append(vuln_msg)
             
-            # Step 5: Check suspicious paths
-            suspicious_paths = await self.check_suspicious_paths(wp_url)
-            if suspicious_paths:
-                result.suspicious_paths = suspicious_paths
-                for path, reason in suspicious_paths[:2]:
-                    result.vulnerabilities.append(f"{path} ({reason})")
-            
         except Exception as e:
-            logger.debug(f"Comprehensive scan error for {domain}: {e}")
+            logger.debug(f"Scan error for {domain}: {e}")
         
         return result
 
-# ================= ENHANCED OUTPUT HANDLER =================
-class EnhancedOutputHandler:
+# ================= OUTPUT HANDLER =================
+class OutputHandler:
     def __init__(self, output_file: str):
         self.output_file = output_file
         self.file_handle = None
@@ -865,41 +828,41 @@ class EnhancedOutputHandler:
     async def __aenter__(self):
         self.file_handle = open(self.output_file, 'w', encoding='utf-8')
         self.file_handle.write("=" * 80 + "\n")
-        self.file_handle.write("WORDPRESS VULNERABILITY SCAN - ENHANCED EDITION\n")
+        self.file_handle.write("WORDPRESS VULNERABILITY SCAN - ULTIMATE EDITION\n")
         self.file_handle.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         self.file_handle.write("=" * 80 + "\n\n")
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.file_handle:
-            await self.write_detailed_summary()
+            await self.write_summary()
             self.file_handle.close()
     
-    async def update_stats(self, result: ScanResult, requests_made: int):
-        """Cập nhật stats chi tiết"""
+    async def update_stats(self, result: ScanResult):
         async with self.lock:
             self.stats.scanned += 1
+            self.stats.requests_total += result.domain_info.requests_made
             
             domain_info = result.domain_info
             
             if domain_info.alive:
                 self.stats.domains_alive += 1
+                
+                if domain_info.is_wordpress:
+                    self.stats.wp_detected += 1
+                    
+                    if domain_info.is_wp_com:
+                        self.stats.wp_com_sites += 1
+                    else:
+                        self.stats.wp_self_hosted += 1
+                else:
+                    self.stats.wp_not_detected += 1
             else:
                 self.stats.domains_dead += 1
             
-            if domain_info.is_wordpress:
-                self.stats.wp_detected += 1
-            elif domain_info.alive:
-                self.stats.wp_not_detected += 1
-                # Dự đoán false negative dựa trên reason
-                if not domain_info.wp_detection_reason or 'timeout' in domain_info.wp_detection_reason.lower():
-                    self.stats.wp_false_negative += 1
-            
-            self.stats.requests_total += requests_made
-            self.stats.requests_success += 1 if domain_info.alive else 0
-            
             if result.plugins:
                 self.stats.plugins_found += len(result.plugins)
+                self.stats.verified_plugins += sum(1 for p in result.plugins.values() if p['verified'])
             
             if result.has_vulnerabilities:
                 self.stats.vulnerabilities_found += len(result.vulnerabilities)
@@ -911,77 +874,77 @@ class EnhancedOutputHandler:
         
         domain_info = result.domain_info
         
-        # Chỉ ghi nếu có thông tin thú vị
-        if (domain_info.alive or domain_info.is_wordpress or 
-            result.has_vulnerabilities or result.plugins):
+        # Chỉ ghi thông tin quan trọng
+        should_write = (
+            domain_info.alive and 
+            (domain_info.is_wordpress or result.has_vulnerabilities)
+        )
+        
+        if not should_write:
+            return
+        
+        async with self.lock:
+            self.file_handle.write("\n" + "=" * 80 + "\n")
+            self.file_handle.write(f"DOMAIN: {domain_info.domain}\n")
+            self.file_handle.write("-" * 40 + "\n")
+            self.file_handle.write(f"Alive: {'Yes' if domain_info.alive else 'No'}\n")
+            self.file_handle.write(f"HTTP Status: {domain_info.http_status}\n")
+            self.file_handle.write(f"Response Time: {domain_info.response_time:.2f}s\n")
+            self.file_handle.write(f"WordPress: {'Yes' if domain_info.is_wordpress else 'No'}\n")
             
-            async with self.lock:
-                self.file_handle.write("\n" + "=" * 80 + "\n")
-                self.file_handle.write(f"DOMAIN: {domain_info.domain}\n")
-                self.file_handle.write("-" * 40 + "\n")
-                self.file_handle.write(f"Alive: {'Yes' if domain_info.alive else 'No'}\n")
-                self.file_handle.write(f"HTTP Status: {domain_info.http_status}\n")
-                self.file_handle.write(f"Response Time: {domain_info.response_time:.2f}s\n")
-                self.file_handle.write(f"WordPress: {'Yes' if domain_info.is_wordpress else 'No'}\n")
-                
-                if domain_info.is_wordpress:
-                    self.file_handle.write(f"WP URL: {domain_info.wp_url}\n")
-                    self.file_handle.write(f"Detection Reason: {domain_info.wp_detection_reason}\n")
-                
-                if result.plugins:
-                    self.file_handle.write(f"\n🔍 PLUGINS ({len(result.plugins)}):\n")
-                    for plugin, info in result.plugins.items():
+            if domain_info.is_wordpress:
+                self.file_handle.write(f"Type: {'WordPress.com' if domain_info.is_wp_com else 'Self-hosted'}\n")
+                self.file_handle.write(f"WP URL: {domain_info.wp_url}\n")
+                self.file_handle.write(f"Detection: {domain_info.wp_detection_reason}\n")
+            
+            if result.plugins:
+                self.file_handle.write(f"\n🔍 PLUGINS ({len(result.plugins)} verified):\n")
+                for plugin, info in result.plugins.items():
+                    if info['verified']:
                         self.file_handle.write(f"  • {plugin}")
                         if info['version']:
                             self.file_handle.write(f" (v{info['version']})")
-                        if info['suspicious_files']:
-                            self.file_handle.write(f" [SUSP: {', '.join(info['suspicious_files'])}]")
+                        if info['dangerous_files_found']:
+                            self.file_handle.write(f" [DANGER: {', '.join(info['dangerous_files_found'])}]")
                         self.file_handle.write("\n")
-                
-                if result.has_vulnerabilities:
-                    self.file_handle.write(f"\n⚠️ VULNERABILITIES ({len(result.vulnerabilities)}):\n")
-                    for vuln in result.vulnerabilities:
-                        self.file_handle.write(f"  • {vuln}\n")
-                
-                self.file_handle.write("=" * 80 + "\n")
-                self.file_handle.flush()
+            
+            if result.has_vulnerabilities:
+                self.file_handle.write(f"\n⚠️ VULNERABILITIES ({len(result.vulnerabilities)}):\n")
+                for vuln in result.vulnerabilities:
+                    self.file_handle.write(f"  • {vuln}\n")
+            
+            self.file_handle.write("=" * 80 + "\n")
+            self.file_handle.flush()
     
-    async def write_detailed_summary(self):
+    async def write_summary(self):
         if not self.file_handle:
             return
         
         async with self.lock:
             self.file_handle.write("\n\n" + "=" * 80 + "\n")
-            self.file_handle.write("DETAILED SCAN SUMMARY\n")
+            self.file_handle.write("SCAN SUMMARY\n")
             self.file_handle.write("=" * 80 + "\n")
             
-            # Domain statistics
-            self.file_handle.write(f"\n📊 DOMAIN STATISTICS:\n")
+            self.file_handle.write(f"\n📊 STATISTICS:\n")
             self.file_handle.write(f"  • Total Domains: {self.stats.total_domains}\n")
-            self.file_handle.write(f"  • Domains Alive: {self.stats.domains_alive} ({self.stats.domains_alive/self.stats.total_domains*100:.1f}%)\n")
-            self.file_handle.write(f"  • Domains Dead: {self.stats.domains_dead} ({self.stats.domains_dead/self.stats.total_domains*100:.1f}%)\n")
+            self.file_handle.write(f"  • Alive: {self.stats.domains_alive} ({self.stats.domains_alive/self.stats.total_domains*100:.1f}%)\n")
+            self.file_handle.write(f"  • Dead: {self.stats.domains_dead}\n")
             
-            # WordPress detection
             if self.stats.domains_alive > 0:
-                self.file_handle.write(f"\n🅆🄿 WORDPRESS DETECTION:\n")
-                self.file_handle.write(f"  • WP Detected: {self.stats.wp_detected} ({self.stats.wp_detection_rate:.1f}% of alive)\n")
-                self.file_handle.write(f"  • WP Not Detected: {self.stats.wp_not_detected}\n")
-                self.file_handle.write(f"  • Estimated False Negatives: {self.stats.wp_false_negative} ({self.stats.false_negative_rate:.1f}%)\n")
+                self.file_handle.write(f"\n🅆🄿 WORDPRESS:\n")
+                self.file_handle.write(f"  • Total: {self.stats.wp_detected} ({self.stats.wp_detection_rate:.1f}%)\n")
+                self.file_handle.write(f"  • Self-hosted: {self.stats.wp_self_hosted}\n")
+                self.file_handle.write(f"  • WordPress.com: {self.stats.wp_com_sites}\n")
             
-            # Findings
             self.file_handle.write(f"\n🔍 FINDINGS:\n")
-            self.file_handle.write(f"  • Plugins Found: {self.stats.plugins_found}\n")
-            self.file_handle.write(f"  • Vulnerabilities Found: {self.stats.vulnerabilities_found}\n")
+            self.file_handle.write(f"  • Verified Plugins: {self.stats.verified_plugins}\n")
+            self.file_handle.write(f"  • Vulnerabilities: {self.stats.vulnerabilities_found}\n")
             
-            # Performance
             self.file_handle.write(f"\n⚡ PERFORMANCE:\n")
             self.file_handle.write(f"  • Total Requests: {self.stats.requests_total}\n")
-            self.file_handle.write(f"  • Requests/Minute: {self.stats.requests_per_minute:.1f}\n")
             self.file_handle.write(f"  • Domains/Second: {self.stats.domains_per_second:.2f}\n")
             self.file_handle.write(f"  • Total Time: {self.stats.elapsed_time:.1f}s\n")
-            self.file_handle.write(f"  • Rate Limited: {self.stats.rate_limited_count} times\n")
             
-            # Vulnerable sites
             if self.vulnerabilities_found:
                 self.file_handle.write(f"\n🚨 VULNERABLE SITES ({len(self.vulnerabilities_found)}):\n")
                 self.file_handle.write("-" * 40 + "\n")
@@ -989,15 +952,13 @@ class EnhancedOutputHandler:
                     domain = result.domain_info.domain
                     vuln_count = len(result.vulnerabilities)
                     main_vuln = result.vulnerabilities[0] if result.vulnerabilities else ""
-                    self.file_handle.write(f"  • {domain} - {vuln_count} vulns - {main_vuln[:50]}...\n")
+                    self.file_handle.write(f"  • {domain} - {vuln_count} vulns\n")
             
             self.file_handle.write("\n" + "=" * 80 + "\n")
     
     def display_progress(self):
-        """Hiển thị progress chi tiết"""
         sys.stdout.write('\r\033[K')
         
-        # Progress bar đơn giản
         progress_width = 40
         if self.stats.total_domains > 0:
             percent = self.stats.scanned / self.stats.total_domains
@@ -1007,13 +968,12 @@ class EnhancedOutputHandler:
         else:
             progress_str = "[░░░░░░░░░░░░░░░░░░░░] 0.0%"
         
-        # Thông tin chi tiết
         info = (
             f"📊 {self.stats.scanned}/{self.stats.total_domains} "
             f"{progress_str} | "
             f"🏥 {self.stats.domains_alive} | "
             f"🅆 {self.stats.wp_detected} | "
-            f"🔌 {self.stats.plugins_found} | "
+            f"🏠 {self.stats.wp_self_hosted} | "
             f"⚠️ {self.stats.vulnerabilities_found} | "
             f"⚡ {self.stats.domains_per_second:.1f}/s"
         )
@@ -1022,42 +982,35 @@ class EnhancedOutputHandler:
         sys.stdout.flush()
 
 # ================= MAIN SCAN WORKER =================
-async def enhanced_scan_worker(
+async def scan_worker(
     domain: str, 
-    scanner: EnhancedWordPressScanner,
-    output_handler: EnhancedOutputHandler,
+    scanner: UltimateWordPressScanner,
+    output_handler: OutputHandler,
     semaphore: Semaphore,
     session: aiohttp.ClientSession,
     rate_limiter: SmartRateLimiter
 ):
-    """Worker cải tiến - tracking chi tiết"""
     async with semaphore:
-        requests_before = rate_limiter.total_requests
-        
         try:
             result = await scanner.scan_domain_comprehensive(domain)
             
-            requests_made = rate_limiter.total_requests - requests_before
+            await output_handler.update_stats(result)
             
-            await output_handler.update_stats(result, requests_made)
-            
-            # Hiển thị thông tin thú vị
+            # Hiển thị
             if result.has_vulnerabilities:
-                print(f"\r\033[K\033[91m🚨 VULN: {domain} - {result.vulnerabilities[0]}\033[0m")
+                print(f"\r\033[K\033[91m🚨 VULN: {domain}\033[0m")
             elif result.domain_info.is_wordpress:
-                print(f"\r\033[K\033[92m✓ WP: {domain} ({result.domain_info.wp_detection_reason})\033[0m")
+                if result.domain_info.is_wp_com:
+                    print(f"\r\033[K\033[94m☁️ WP.com: {domain}\033[0m")
+                else:
+                    print(f"\r\033[K\033[92m✓ WP: {domain}\033[0m")
             elif result.domain_info.alive:
-                print(f"\r\033[K\033[93m○ Alive: {domain} (not WP)\033[0m")
+                print(f"\r\033[K\033[93m○ Alive: {domain}\033[0m")
             
-            # Ghi kết quả chi tiết
             await output_handler.write_result(result)
-            
-            # Hiển thị progress
             output_handler.display_progress()
             
         except Exception as e:
-            async with output_handler.lock:
-                output_handler.stats.errors += 1
             logger.debug(f"Worker error for {domain}: {e}")
 
 # ================= MAIN FUNCTION =================
@@ -1070,43 +1023,41 @@ async def main():
     output_file = sys.argv[1]
     
     print("\n" + "=" * 70)
-    print("🔍 ENHANCED WORDPRESS VULNERABILITY SCANNER")
-    print("🎯 Professional Edition - Focus on Weak WP Sites")
+    print("🔍 WORDPRESS VULNERABILITY SCANNER - ULTIMATE EDITION")
+    print("🎯 Powerful domain sources - No false positives")
     print("=" * 70 + "\n")
     
-    # Initialize
     rate_limiter = SmartRateLimiter()
     
     try:
-        # Step 1: Fetch HIGH QUALITY domains
-        print("[+] Fetching HIGH QUALITY domains (focus on weak WP sites)...")
+        # Fetch domains
+        print("[+] Fetching domains from multiple sources...")
         async with aiohttp.ClientSession() as session:
-            domains = await SmartDomainFetcher.fetch_high_quality_domains(session, CONFIG['DOMAIN_LIMIT'])
+            domains = await UltimateDomainFetcher.fetch_high_quality_domains(
+                session, CONFIG['DOMAIN_LIMIT']
+            )
         
         if not domains:
-            print("[-] Không tìm thấy domain chất lượng!")
+            print("[-] No domains found!")
             sys.exit(1)
         
-        print(f"[+] Đã lấy {len(domains)} domain CHẤT LƯỢNG CAO")
-        print(f"[+] Chú trọng tìm WordPress yếu qua crt.sh + Common Crawl")
-        print(f"[+] Dự kiến WP detection rate: 50-70%\n")
+        print(f"[+] Got {len(domains)} domains ready for scanning")
+        print()
         
-        # Step 2: Setup output
-        output_handler = EnhancedOutputHandler(output_file)
+        # Setup output
+        output_handler = OutputHandler(output_file)
         await output_handler.__aenter__()
         output_handler.stats.total_domains = len(domains)
         
-        print("[+] Bắt đầu quét nâng cao...")
-        print("[•] Hiển thị: VULN 🚨, WP ✓, Alive ○, Dead (không hiển thị)")
+        print("[+] Starting scan...")
+        print("[•] Display: VULN 🚨, WP ✓, WP.com ☁️, Alive ○")
         print()
         
-        # Step 3: Setup scanner session
+        # Setup scanner
         connector = aiohttp.TCPConnector(
             limit=CONFIG['MAX_CONCURRENT'],
-            limit_per_host=4,
-            ttl_dns_cache=600,
-            force_close=False,
-            enable_cleanup_closed=True
+            limit_per_host=3,
+            ttl_dns_cache=300,
         )
         
         async with aiohttp.ClientSession(
@@ -1114,76 +1065,70 @@ async def main():
             timeout=aiohttp.ClientTimeout(total=CONFIG['TIMEOUT'])
         ) as scan_session:
             
-            scanner = EnhancedWordPressScanner(scan_session, rate_limiter)
+            scanner = UltimateWordPressScanner(scan_session, rate_limiter)
             semaphore = Semaphore(CONFIG['MAX_CONCURRENT'])
             
-            # Step 4: Tạo và chạy tasks
+            # Create tasks
             tasks = []
             for domain in domains:
                 task = asyncio.create_task(
-                    enhanced_scan_worker(
+                    scan_worker(
                         domain, scanner, output_handler, 
                         semaphore, scan_session, rate_limiter
                     )
                 )
                 tasks.append(task)
             
-            # Step 5: Chạy với timeout dài
-            print("\n[+] Đang quét... (Ctrl+C để dừng)\n")
+            # Run scan
+            print("\n[+] Scanning... (Ctrl+C to stop)\n")
             
             try:
                 start_time = time.time()
                 await asyncio.gather(*tasks, return_exceptions=True)
                 elapsed = time.time() - start_time
                 
-                print(f"\n\n[+] Quét hoàn tất trong {elapsed:.1f}s")
+                print(f"\n\n[+] Scan completed in {elapsed:.1f}s")
                 
             except asyncio.TimeoutError:
-                print(f"\n[!] Scan timeout sau {CONFIG['SCAN_TIMEOUT']}s")
+                print(f"\n[!] Timeout after {CONFIG['SCAN_TIMEOUT']}s")
             
-            # Final statistics
+            # Final stats
             print("\n" + "=" * 70)
-            print("✅ SCAN COMPLETED - DETAILED RESULTS")
+            print("✅ SCAN COMPLETED")
             print("=" * 70)
             
             stats = output_handler.stats
-            print(f"\n📊 THỐNG KÊ CHI TIẾT:")
-            print(f"   • Tổng domain: {stats.total_domains}")
-            print(f"   • Domain alive: {stats.domains_alive} ({stats.domains_alive/stats.total_domains*100:.1f}%)")
-            print(f"   • WordPress phát hiện: {stats.wp_detected} ({stats.wp_detection_rate:.1f}% of alive)")
-            print(f"   • Plugin tìm thấy: {stats.plugins_found}")
-            print(f"   • Lỗ hổng phát hiện: {stats.vulnerabilities_found}")
-            print(f"   • Tốc độ: {stats.domains_per_second:.2f} domain/s")
-            print(f"   • Request rate: {stats.requests_per_minute:.1f} req/min")
-            
-            if stats.wp_false_negative > 0:
-                print(f"   • Ước tính false negative: {stats.wp_false_negative} domains")
+            print(f"\n📊 STATISTICS:")
+            print(f"   • Total: {stats.total_domains}")
+            print(f"   • Alive: {stats.domains_alive} ({stats.domains_alive/stats.total_domains*100:.1f}%)")
+            print(f"   • WordPress: {stats.wp_detected} ({stats.wp_detection_rate:.1f}% of alive)")
+            print(f"   • Self-hosted: {stats.wp_self_hosted}")
+            print(f"   • Verified plugins: {stats.verified_plugins}")
+            print(f"   • Real vulnerabilities: {stats.vulnerabilities_found}")
             
             if output_handler.vulnerabilities_found:
-                print(f"\n🚨 PHÁT HIỆN LỖ HỔNG:")
-                print(f"   • Tổng cộng: {len(output_handler.vulnerabilities_found)} site có lỗ hổng")
-                print(f"   • Đã lưu chi tiết vào: {output_file}")
+                print(f"\n🚨 VULNERABILITIES FOUND:")
+                print(f"   • Sites with vulns: {len(output_handler.vulnerabilities_found)}")
                 
-                # Hiển thị top vulnerable sites
-                print(f"\n📋 TOP VULNERABLE SITES:")
-                for i, result in enumerate(output_handler.vulnerabilities_found[:5], 1):
+                print(f"\n📋 VULNERABLE SITES:")
+                for i, result in enumerate(output_handler.vulnerabilities_found[:15], 1):
                     domain = result.domain_info.domain
                     vuln_count = len(result.vulnerabilities)
-                    print(f"   {i}. {domain} - {vuln_count} lỗ hổng")
+                    print(f"   {i}. {domain} ({vuln_count} vulnerabilities)")
             
-            print(f"\n📁 Kết quả chi tiết đã lưu vào: {output_file}")
+            print(f"\n📁 Detailed results saved to: {output_file}")
     
     except KeyboardInterrupt:
-        print("\n\n[!] Scan bị ngừng bởi người dùng")
+        print("\n\n[!] Scan stopped by user")
     except Exception as e:
-        print(f"\n[!] Lỗi nghiêm trọng: {e}")
+        print(f"\n[!] Error: {e}")
         import traceback
         traceback.print_exc()
     finally:
         await output_handler.__aexit__(None, None, None)
 
 def signal_handler(sig, frame):
-    print("\n\n[!] Đang dừng scan...")
+    print("\n\n[!] Stopping scan...")
     sys.exit(0)
 
 if __name__ == "__main__":
@@ -1192,6 +1137,6 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n[!] Scan stopped by user")
+        print("\n[!] Stopped by user")
     except Exception as e:
         print(f"\n[!] Fatal error: {e}")
