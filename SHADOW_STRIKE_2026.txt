@@ -1,0 +1,10 @@
+TARGET: www.nisci.gov.vn (original: www.nisci.gov.vn)
+[HIGH RISK] Outdated PHP v5.5.9 - Multiple Vulns
+[DIR LIST] Exposed Uploads: http://www.nisci.gov.vn/wp-content/uploads/
+
+TARGET: inet.edu.vn (original: inet.edu.vn)
+[HIGH RISK] Outdated PHP v7.4.33 - Multiple Vulns
+
+TARGET: hoasen.edu.vn (original: hoasen.edu.vn)
+[HIGH RISK] contact-form-7 v5.8.2 - Stored XSS/SQLi/Open Redirect CVE-2020-35489/2025-3247
+

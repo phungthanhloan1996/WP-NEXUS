@@ -1,0 +1,13 @@
+# Runtime cache
+.wp_accurate_cache/
+.wp_intel_cache/
+.wp_scanner_cache_*/
+.wp_tactical_cache/
+
+# Databases
+*.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
