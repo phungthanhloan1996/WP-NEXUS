@@ -236,12 +236,27 @@ class ShadowStrikeHunter:
                 try:
                     r = requests.get(f"https://crt.sh/?q={kw}&output=json", timeout=30 + attempt*15)
                     if r.status_code == 200:
-                        filtered = [i['name_value'].lower().replace('*.', '')
-                                    for i in r.json()
-                                    if len(i['name_value'].split('.')) <= 4 and len(i['name_value']) < 80]
-                        # Lọc subdomain rác
+                        # PHƯƠNG PHÁP ĐÃ TEST THÀNH CÔNG
+                        old_method = []
+                        for entry in r.json():
+                            name = entry.get('name_value', '')
+                            if name:
+                                name = name.lower().replace('*.', '')
+                                if '\n' in name:
+                                    for d in name.split('\n'):
+                                        d = d.strip()
+                                        if d and len(d.split('.')) <= 5:  # ← DÙNG ≤5
+                                            old_method.append(d)
+                                else:
+                                    if name and len(name.split('.')) <= 5:  # ← DÙNG ≤5
+                                        old_method.append(name)
+                        
+                        # Lọc rác
                         bad_keywords = ['test', 'staging', 'dev', 'beta', 'cache', 'cdn', 'mail', 'api', 'forum']
-                        return [d for d in filtered if not any(k in d for k in bad_keywords)]
+                        cleaned = [d for d in old_method if not any(k in d for k in bad_keywords)]
+                        
+                        return list(set(cleaned))
+                    
                     time.sleep(3 * (attempt + 1))
                 except Exception as e:
                     print(f"{Y}[!] Lỗi {kw} (lần {attempt+1}): {str(e)}{W}")
