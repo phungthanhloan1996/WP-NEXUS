@@ -352,20 +352,16 @@ class ServerBehaviorObserver:
 
 
     def fingerprint_plugins_themes(self):
-        """Passive + enhanced semi-active fingerprinting for plugins & themes
-        - Passive: parse HTML for resource paths and generator meta
-        - Semi-active: check readme.txt/style.css for detected slugs + brute top common plugins
-        """
+        """Passive + enhanced semi-active fingerprinting for plugins & themes"""
         observations = {
             'detected_cms': False,
             'wp_version': None,
             'plugins': [],
             'themes': [],
-            'plugin_detection_sources': []  # Để theo dõi nguồn phát hiện (debug/report)
+            'plugin_detection_sources': []
         }
 
         try:
-            # Lấy trang chủ một lần
             r = self.session.get(self.target, timeout=10)
             if r.status_code != 200:
                 return observations
@@ -373,30 +369,52 @@ class ServerBehaviorObserver:
             html = r.text
             html_lower = html.lower()
 
-            # 1. Passive: Xác nhận là WordPress + version từ meta generator
+            # 1. Detect WordPress + version
             if any(x in html_lower for x in ['wp-content', 'wp-includes', 'wp-json', 'wordpress']):
                 observations['detected_cms'] = True
 
-            generator_match = re.search(r'<meta name="generator" content="WordPress ([\d\.]+)"', html, re.IGNORECASE)
+            generator_match = re.search(
+                r'<meta name="generator" content="WordPress ([\d\.]+)"',
+                html,
+                re.IGNORECASE
+            )
             if generator_match:
                 observations['wp_version'] = generator_match.group(1)
 
-            # 2. Passive: Tìm slug plugin/theme từ các đường dẫn tài nguyên trong HTML
+            # 2. Passive resource paths
             plugin_paths = set(re.findall(r'/wp-content/plugins/([^/]+)/', html))
             theme_paths = set(re.findall(r'/wp-content/themes/([^/]+)/', html))
 
-            # 3. Semi-active: Check chi tiết cho các slug đã phát hiện (passive)
-            for slug in list(plugin_paths)[:12]:  # tăng nhẹ giới hạn
-                self._check_plugin_readme(slug, observations, source="passive_resource_path")
-            
-            # 4. Semi-active: Check theme đã phát hiện
+            # 3. Themes
             for slug in list(theme_paths)[:6]:
                 self._check_theme_style_css(slug, observations, source="passive_resource_path")
 
-            # 5. ENHANCED: Brute-force nhẹ top common plugins (rất hiệu quả với site che giấu tốt)
+            # 4. Plugins from HTML
+            for slug in list(plugin_paths)[:12]:
+                self._check_plugin_readme(slug, observations, source="passive_resource_path")
+                self._check_plugin_main_file(slug, observations, source="passive_resource_path")
+                self._infer_plugin_version_from_assets(
+                    slug, html, observations, source="passive_resource_path"
+                )
+
+            existing = {p['slug'] for p in observations['plugins']}
+
+            for slug in plugin_paths:
+                if slug not in existing:
+                    observations['plugins'].append({
+                        'slug': slug,
+                        'name': 'Unknown',
+                        'version': None,
+                        'evidence': 'resource path observed',
+                        'detection_source': 'passive_resource_path',
+                        'version_confidence': 'none'
+                    })
+
+
+            # 5. Brute common plugins
             common_plugin_slugs = [
                 'contact-form-7', 'elementor', 'woocommerce', 'yoast-seo', 'akismet',
-                'wpforms-lite', 'all-in-one-seo-pack', 'jetpack', 'wordfence', 
+                'wpforms-lite', 'all-in-one-seo-pack', 'jetpack', 'wordfence',
                 'litespeed-cache', 'rank-math', 'wp-rocket', 'classic-editor',
                 'wp-mail-smtp', 'updraftplus', 'monsterinsights-lite', 'smush',
                 'autoptimize', 'redirection', 'wp-optimize', 'complianz-gdpr',
@@ -404,19 +422,37 @@ class ServerBehaviorObserver:
                 'duplicate-post', 'google-site-kit', 'really-simple-ssl'
             ]
 
-            detected_slugs = {p['slug'] for p in observations['plugins']}  # Tránh check lại
+            detected_slugs = {p['slug'] for p in observations['plugins']}
 
             for slug in common_plugin_slugs:
                 if slug in detected_slugs:
                     continue
 
                 self._check_plugin_readme(slug, observations, source="common_list_brute")
+                self._check_plugin_main_file(slug, observations, source="common_list_brute")
+                self._infer_plugin_version_from_assets(
+                    slug, html, observations, source="common_list_brute"
+                )
 
-                # Giới hạn tốc độ + tránh bị WAF chặn
-                time.sleep(0.9 + (len(observations['plugins']) * 0.1))  # tăng dần delay nhẹ
+                # 🔥 FIX DUY NHẤT: plugin tồn tại nhưng không lộ version
+                if slug not in {p['slug'] for p in observations['plugins']}:
+                    plugin_dir = urljoin(self.target, f'/wp-content/plugins/{slug}/')
+                    resp = self.session.head(
+                        plugin_dir, timeout=5, allow_redirects=False
+                    )
+                    if resp.status_code in (200, 403):
+                        self._upsert_plugin(
+                            observations,
+                            {
+                                'slug': slug,
+                                'name': 'Unknown',
+                                'version': 'Unknown',
+                                'evidence': 'plugin directory exists',
+                                'detection_source': 'directory_existence'
+                            }
+                        )
 
-            # 6. Optional: Check thêm một số file signature phổ biến khác (nếu cần)
-            # self._check_extra_signatures(observations)
+                time.sleep(0.9 + (len(observations['plugins']) * 0.1))
 
             return observations
 
@@ -446,9 +482,77 @@ class ServerBehaviorObserver:
                     'evidence': 'readme.txt accessible',
                     'detection_source': source
                 }
-                observations['plugins'].append(plugin_info)
+                self._upsert_plugin(observations, plugin_info)
                 observations['plugin_detection_sources'].append(f"{slug} ({source})")
                 print(f"[+] Detected plugin: {slug} ({source})")  # debug console
+        except:
+            pass
+
+
+
+    def _upsert_plugin(self, observations, plugin_info):
+        """
+        Update plugin if slug exists and version is Unknown,
+        otherwise append new plugin
+        """
+        for p in observations['plugins']:
+            if p['slug'] == plugin_info['slug']:
+                if p.get('version') in [None, 'Unknown']:
+                    p.update(plugin_info)
+                return
+        observations['plugins'].append(plugin_info)
+
+
+
+
+
+    def _infer_plugin_version_from_assets(self, slug, html, observations, source="asset_query_string"):
+        """
+        Infer plugin version from ?ver= in JS/CSS assets
+        """
+        pattern = rf'/wp-content/plugins/{slug}/[^"\']+\?ver=([\d\.]+)'
+        matches = re.findall(pattern, html)
+
+        if matches:
+            version = max(matches, key=len)  # lấy version dài nhất
+            plugin_info = {
+                'slug': slug,
+                'name': 'Unknown',
+                'version': version,
+                'version_confidence': 'low',
+                'evidence': '?ver query string in assets',
+                'detection_source': source
+            }
+            self._upsert_plugin(observations, plugin_info)
+            observations['plugin_detection_sources'].append(f"{slug} ({source})")
+
+
+
+
+    def _check_plugin_main_file(self, slug, observations, source="plugin_main_file"):
+        """
+        Heuristic plugin version detection via main plugin PHP file
+        """
+        url = urljoin(self.target, f'/wp-content/plugins/{slug}/{slug}.php')
+        try:
+            r = self.session.get(url, timeout=6)
+            if r.status_code != 200 or len(r.text) > 120000:
+                return
+
+            version_match = re.search(r'Version:\s*([\d\.]+)', r.text, re.IGNORECASE)
+            name_match = re.search(r'Plugin Name:\s*(.+)', r.text, re.IGNORECASE)
+
+            if version_match:
+                plugin_info = {
+                    'slug': slug,
+                    'name': name_match.group(1).strip() if name_match else 'Unknown',
+                    'version': version_match.group(1),
+                    'version_confidence': 'medium',
+                    'evidence': f'{slug}.php header',
+                    'detection_source': source
+                }
+                self._upsert_plugin(observations, plugin_info)
+                observations['plugin_detection_sources'].append(f"{slug} ({source})")
         except:
             pass
 

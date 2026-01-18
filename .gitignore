@@ -1,13 +1,12 @@
-# Runtime cache
-.wp_accurate_cache/
-.wp_intel_cache/
+# cache
+.wp_scanner_cache/
 .wp_scanner_cache_*/
-.wp_tactical_cache/
 
-# Databases
+# databases
 *.db
 
-# Python
-__pycache__/
-*.pyc
-venv/
+# reports
+VULN_REPORT_*.json
+SHADOW_STRIKE_*.txt
+WEAK_DOMAINS.txt
+
