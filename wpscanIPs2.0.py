@@ -284,16 +284,25 @@ class ShadowStrikeHunter:
 
         def get_wayback(kw):
             try:
-                r = requests.get(f"http://web.archive.org/cdx/search/cdx?url=*.{kw}/*&output=json&fl=original&collapse=urlkey", timeout=30)
+                # Xử lý keyword có dấu .
+                if kw.startswith('.'):
+                    domain = kw[1:]  # ".gov.vn" → "gov.vn"
+                else:
+                    domain = kw
+                    
+                url = f"http://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&fl=original&collapse=urlkey"
+                r = requests.get(url, timeout=30)
+                
                 if r.status_code == 200:
                     urls = r.json()
                     domains = set()
-                    for url_list in urls[1:]:  # Bỏ header
+                    for url_list in urls[1:]:
                         if url_list:
                             url = url_list[0]
-                            domain = url.split('/')[2]
-                            if '.' + kw in domain and len(domain.split('.')) <= 4:
-                                domains.add(domain.lower())
+                            domain_name = url.split('/')[2]
+                            # FILTER TỐT HƠN
+                            if f".{domain}" in domain_name or domain_name.endswith(domain):
+                                domains.add(domain_name.lower())
                     return list(domains)
             except:
                 pass
@@ -301,66 +310,90 @@ class ShadowStrikeHunter:
 
         def get_rapiddns(kw):
             try:
-                # Sử dụng API public của RapidDNS
-                r = requests.get(f"https://rapiddns.io/subdomain?domain={kw}&full=1&down=1#result", timeout=30)
+                if kw.startswith('.'):
+                    domain = kw[1:]
+                else:
+                    domain = kw
+                    
+                # DÙNG sonar.omnisint.io
+                url = f"https://sonar.omnisint.io/subdomains/{domain}"
+                r = requests.get(url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
+                
                 if r.status_code == 200:
-                    # Parse HTML để lấy domains
-                    domains = re.findall(r'<td>([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})</td>', r.text)
-                    filtered = [d.lower() for d in domains if kw in d and len(d.split('.')) <= 4]
+                    data = r.json()
+                    if isinstance(data, list):
+                        # FILTER CHẶT
+                        return [d.lower() for d in data if isinstance(d, str) and 
+                                (f".{domain}" in d or d.endswith(domain))]
+            except:
+                pass
+            return []
+
+        def get_c99_subdomains(kw):  # ĐỔI TÊN TỪ get_virustotal
+            try:
+                if kw.startswith('.'):
+                    domain = kw[1:]
+                else:
+                    domain = kw
+                    
+                url = f"https://subdomainfinder.c99.nl/scans/2024-12-01/{domain}"
+                r = requests.get(url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
+                
+                if r.status_code == 200:
+                    domains = re.findall(r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r.text)
+                    # FILTER CHẶT
+                    filtered = []
+                    for d in domains:
+                        d_lower = d.lower()
+                        if (f".{domain}" in d_lower or d_lower.endswith(domain)) and d_lower.count('.') >= 2:
+                            filtered.append(d_lower)
                     return list(set(filtered))
             except:
                 pass
             return []
 
-        def get_virustotal(kw):
-            try:
-                # Cố gắng lấy từ VirusTotal (có thể bị rate limit)
-                r = requests.get(f"https://www.virustotal.com/ui/domains/{kw}/subdomains", 
-                                headers={'User-Agent': 'Mozilla/5.0'}, timeout=30)
-                if r.status_code == 200:
-                    data = r.json()
-                    domains = [item['id'] for item in data.get('data', []) if '.' + kw in item['id']]
-                    return domains
-            except:
-                pass
-            return []
-
-        # THÊM NGUỒN TỪ DANH SÁCH DOMAIN CÔNG KHAI
         def get_public_domains():
             public_sources = [
                 "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat",
                 "https://data.iana.org/TLD/tlds-alpha-by-domain.txt",
-                "https://www.domcop.com/files/top/top10milliondomains.csv.zip?2026",
             ]
             domains = []
-            for url in public_sources[:1]:  # Chỉ lấy từ nguồn đầu tiên để tránh quá tải
+            for url in public_sources:
                 try:
                     r = requests.get(url, timeout=30)
                     if r.status_code == 200:
                         lines = r.text.split('\n')
-                        domains.extend([line.strip().lower() for line in lines 
-                                      if line.strip() and not line.startswith('#') and '.' in line])
+                        # LỌC CHỈ LẤY DOMAIN THỰC, KHÔNG LẤY TLDs
+                        for line in lines:
+                            line = line.strip().lower()
+                            if line and not line.startswith('#') and '.' in line:
+                                # Chỉ lấy nếu có subdomain (có ít nhất 2 dấu .)
+                                if line.count('.') >= 2 and len(line) > 4:
+                                    domains.append(line)
                 except:
                     continue
-            return domains
+            return list(set(domains))
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
-            # Thu thập từ tất cả nguồn
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:  # Giảm workers
             futures = []
             
-            # 1. Từ crt.sh
-            for kw in all_keywords[:20]:  # Giới hạn 20 keyword đầu để tránh quá tải
+            # 1. crt.sh (15 keywords)
+            for kw in all_keywords[:15]:
                 futures.append(executor.submit(get_crt, kw))
             
-            # 2. Từ Wayback Machine
-            for kw in all_keywords[20:40]:
+            # 2. Wayback (10 keywords)
+            for kw in all_keywords[15:25]:
                 futures.append(executor.submit(get_wayback, kw))
             
-            # 3. Từ RapidDNS
-            for kw in all_keywords[40:50]:
+            # 3. sonar.omnisint.io (10 keywords)
+            for kw in all_keywords[25:35]:
                 futures.append(executor.submit(get_rapiddns, kw))
             
-            # 4. Thêm domain từ public sources
+            # 4. c99.nl (10 keywords) ← THÊM NÀY!
+            for kw in all_keywords[35:45]:
+                futures.append(executor.submit(get_c99_subdomains, kw))
+            
+            # 5. Public domains
             futures.append(executor.submit(get_public_domains))
             
             # Xử lý kết quả
@@ -369,9 +402,9 @@ class ShadowStrikeHunter:
                     result = future.result()
                     if result:
                         self.targets.update(result)
-                        print(f"{G}[+] Thêm {len(result)} domain từ source{W}")
+                        print(f"{G}[+] Thêm {len(result)} domain{W}")
                 except Exception as e:
-                    print(f"{Y}[!] Lỗi khi xử lý source: {str(e)}{W}")
+                    print(f"{Y}[!] Lỗi: {str(e)[:50]}...{W}")
 
         # THÊM DOMAIN TỪ FILE NGOÀI NẾU CÓ
         domain_files = ['domains.txt', 'targets.txt', 'urls.txt']
@@ -380,13 +413,15 @@ class ShadowStrikeHunter:
                 try:
                     with open(file, 'r', encoding='utf-8', errors='ignore') as f:
                         lines = f.readlines()
+                        file_domains = []
                         for line in lines:
                             domain = line.strip().lower()
                             if domain and '.' in domain:
-                                # Chuẩn hóa domain
                                 domain = domain.replace('http://', '').replace('https://', '').split('/')[0]
-                                self.targets.add(domain)
-                    print(f"{G}[+] Đã load {len(lines)} domain từ {file}{W}")
+                                file_domains.append(domain)
+                        
+                        self.targets.update(file_domains)
+                        print(f"{G}[+] File {file}: {len(file_domains)} domain{W}")
                 except Exception as e:
                     print(f"{Y}[!] Lỗi đọc file {file}: {str(e)}{W}")
 
@@ -394,13 +429,18 @@ class ShadowStrikeHunter:
         cleaned_targets = set()
         for domain in self.targets:
             if len(domain) < 100 and domain.count('.') >= 1:
-                # Loại bỏ các domain rác
-                if any(x in domain for x in ['test.', 'dev.', 'staging.', 'localhost', '127.0.0.1']):
-                    continue
-                cleaned_targets.add(domain)
+                # Loại bỏ domain rác
+                bad_patterns = ['test.', 'dev.', 'staging.', 'localhost', '127.0.0.1', 
+                               'example.', 'dummy.', 'invalid.']
+                if not any(bad in domain for bad in bad_patterns):
+                    cleaned_targets.add(domain)
         
         self.targets = cleaned_targets
         print(f"{G}[✅] Tổng kho mục tiêu: {len(self.targets):,} domain.{W}")
+
+
+
+
 
     def get_plugin_version(self, base_url, slug, headers, proxy):
         paths = [
