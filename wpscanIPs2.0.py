@@ -234,10 +234,21 @@ class ShadowStrikeHunter:
         def get_crt(kw):
             for attempt in range(3):
                 try:
-                    r = requests.get(f"https://crt.sh/?q={kw}&output=json", timeout=30 + attempt*15)
+                    # THÊM DELAY & TĂNG TIMEOUT
+                    time.sleep(random.uniform(2, 8))
+                    
+                    r = requests.get(
+                        f"https://crt.sh/?q={kw}&output=json",
+                        timeout=45 + attempt*25,  # 45-95 giây
+                        headers={
+                            'User-Agent': 'Mozilla/5.0',
+                            'Accept': 'application/json'
+                        }
+                    )
+                    
                     if r.status_code == 200:
                         # PHƯƠNG PHÁP ĐÃ TEST THÀNH CÔNG
-                        old_method = []
+                        filtered = []
                         for entry in r.json():
                             name = entry.get('name_value', '')
                             if name:
@@ -245,21 +256,30 @@ class ShadowStrikeHunter:
                                 if '\n' in name:
                                     for d in name.split('\n'):
                                         d = d.strip()
-                                        if d and len(d.split('.')) <= 5:  # ← DÙNG ≤5
-                                            old_method.append(d)
+                                        if d and len(d.split('.')) <= 5:
+                                            filtered.append(d)
                                 else:
-                                    if name and len(name.split('.')) <= 5:  # ← DÙNG ≤5
-                                        old_method.append(name)
+                                    if name and len(name.split('.')) <= 5:
+                                        filtered.append(name)
                         
                         # Lọc rác
-                        bad_keywords = ['test', 'staging', 'dev', 'beta', 'cache', 'cdn', 'mail', 'api', 'forum']
-                        cleaned = [d for d in old_method if not any(k in d for k in bad_keywords)]
+                        bad_keywords = ['test', 'staging', 'dev', 'beta']
+                        cleaned = [d for d in filtered if not any(k in d for k in bad_keywords)]
                         
+                        print(f"[+] {kw}: {len(cleaned)} domain")
                         return list(set(cleaned))
+                    elif r.status_code == 429:  # Rate limit
+                        wait = 30 * (attempt + 1)
+                        print(f"{Y}[!] Rate limit {kw}, đợi {wait}s{W}")
+                        time.sleep(wait)
                     
-                    time.sleep(3 * (attempt + 1))
+                    time.sleep(5 * (attempt + 1))
+                except requests.exceptions.Timeout:
+                    print(f"{Y}[!] Timeout {kw} (lần {attempt+1}){W}")
+                    time.sleep(10 * (attempt + 1))
                 except Exception as e:
-                    print(f"{Y}[!] Lỗi {kw} (lần {attempt+1}): {str(e)}{W}")
+                    print(f"{Y}[!] Lỗi {kw} (lần {attempt+1}): {str(e)[:50]}...{W}")
+                    time.sleep(5 * (attempt + 1))
             return []
 
         def get_wayback(kw):
@@ -592,7 +612,7 @@ class ShadowStrikeHunter:
             sys.stdout.write(f"\r{Y}[*] Progress: {self.processed}/{len(self.targets)} ({perc:.2f}%) | Ghosting: {decoded_domain[:25]}...{W}")
             sys.stdout.flush()
 
-    def start(self, threads=50):
+    def start(self, threads=30):
         self.fetch_infinity_sources()
         if not self.targets:
             print(f"{R}[!] Không tìm thấy domain nào!{W}")
