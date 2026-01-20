@@ -25,6 +25,7 @@ class ServerBehaviorObserver:
     def __init__(self, target_url):
         self.target = target_url.rstrip('/')
         self.session = requests.Session()
+        self.session.verify = False
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
