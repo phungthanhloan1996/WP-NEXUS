@@ -532,118 +532,119 @@ class ShadowStrikeHunter:
             return domain
 
     def audit(self, domain):
-        decoded_domain = self.decode_domain(domain)
-        findings = []
-        proxy = self.get_proxy()
-        headers = {
-            'User-Agent': random.choice(self.user_agents),
-            'X-Forwarded-For': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://google.com',
-        }
+         with self.semaphore:
+            decoded_domain = self.decode_domain(domain)
+            findings = []
+            proxy = self.get_proxy()
+            headers = {
+                'User-Agent': random.choice(self.user_agents),
+                'X-Forwarded-For': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://google.com',
+            }
 
-        base_url = None
-        for proto in ['https', 'http']:
-            url = f"{proto}://{domain}"
-            try:
-                time.sleep(random.uniform(0.1, 0.5))  # SIÊU NHANH!
-                r_main = requests.get(url, headers=headers, proxies=proxy, timeout=6, verify=False)
-                text_lower = r_main.text.lower()
-                is_wp = any(x in text_lower for x in ['wp-content', 'wp-includes', 'wp-json', 'wordpress'])
-                status_tag = f"{P}[WP]{W}" if is_wp else f"{C}[NON-WP]{W}"
+            base_url = None
+            for proto in ['https', 'http']:
+                url = f"{proto}://{domain}"
+                try:
+                    time.sleep(random.uniform(0.1, 0.5))  # SIÊU NHANH!
+                    r_main = requests.get(url, headers=headers, proxies=proxy, timeout=10, verify=False)
+                    text_lower = r_main.text.lower()
+                    is_wp = any(x in text_lower for x in ['wp-content', 'wp-includes', 'wp-json', 'wordpress'])
+                    status_tag = f"{P}[WP]{W}" if is_wp else f"{C}[NON-WP]{W}"
 
-                with self.lock:
-                    sys.stdout.write(f"\r{Y}[*] Testing: {status_tag} {decoded_domain[:50]}{W}")
-                    sys.stdout.flush()
+                    with self.lock:
+                        sys.stdout.write(f"\r{Y}[*] Testing: {status_tag} {decoded_domain[:50]}{W}")
+                        sys.stdout.flush()
 
-                if is_wp:
-                    base_url = url
-                    # Check PHP version
-                    php_ver = r_main.headers.get('X-Powered-By', '')
-                    if 'PHP/' in php_ver:
-                        match = re.search(r'PHP/([\d\.]+)', php_ver)
-                        if match:
-                            php_version = match.group(1)
-                            try:
-                                if float(php_version[:3]) < 8.0:
-                                    findings.append(f"{R}[HIGH RISK] Outdated PHP v{php_version} - Multiple Vulns{W}")
-                            except:
-                                pass
-                    
-                    # Check directory listing
-                    try:
-                        uploads_url = base_url.rstrip('/') + '/wp-content/uploads/'
-                        r_uploads = requests.get(uploads_url, headers=headers, proxies=proxy, timeout=3, verify=False)
-                        if r_uploads.status_code == 200 and ('Index of' in r_uploads.text or 'parent directory' in r_uploads.text):
-                            findings.append(f"{Y}[DIR LIST] Exposed Uploads: {uploads_url}{W}")
-                    except:
-                        pass
-                    break
-            except:
-                continue
-
-        if not base_url:
-            with self.lock:
-                self.processed += 1
-            return
-
-        # Quét endpoint SIÊU NHANH
-        for path, label in self.critical_endpoints:
-            try:
-                time.sleep(0.05)  # CỰC NHANH!
-                full_url = base_url.rstrip('/') + path
-                r = requests.get(full_url, headers=headers, proxies=proxy, timeout=3, verify=False, allow_redirects=False)
-                if r.status_code == 200 and len(r.content) > 20:
-                    content_preview = r.text[:300]
-                    if any(ind in content_preview for ind in ['DB_PASSWORD', '<?php', 'Index of', 'WPRESS']):
-                        findings.append(f"{R}[CRITICAL] {label}: {full_url}{W}")
-            except:
-                continue
-
-        # Check plugin version
-        plugin_slugs = set(re.findall(r'/wp-content/plugins/([^/\'"]+)/', r_main.text.lower()))
-        if plugin_slugs and findings:  # Chỉ check nếu đã có findings
-            for slug in list(plugin_slugs)[:6]:
-                ver = self.get_plugin_version(base_url, slug, headers, proxy)
-                if ver not in ["N/A", "Unknown"] and slug in self.vuln_plugins:
-                    for old in self.vuln_plugins[slug]['old']:
+                    if is_wp:
+                        base_url = url
+                        # Check PHP version
+                        php_ver = r_main.headers.get('X-Powered-By', '')
+                        if 'PHP/' in php_ver:
+                            match = re.search(r'PHP/([\d\.]+)', php_ver)
+                            if match:
+                                php_version = match.group(1)
+                                try:
+                                    if float(php_version[:3]) < 8.0:
+                                        findings.append(f"{R}[HIGH RISK] Outdated PHP v{php_version} - Multiple Vulns{W}")
+                                except:
+                                    pass
+                        
+                        # Check directory listing
                         try:
-                            if old.startswith('<'):
-                                old_ver = old[1:]
-                                ver_num = ''.join(filter(str.isdigit, ver))
-                                old_num = ''.join(filter(str.isdigit, old_ver))
-                                if ver_num and old_num and int(ver_num) < int(old_num):
-                                    findings.append(f"{R}[HIGH RISK] {slug} v{ver} - {self.vuln_plugins[slug]['desc']}{W}")
-                                    break
+                            uploads_url = base_url.rstrip('/') + '/wp-content/uploads/'
+                            r_uploads = requests.get(uploads_url, headers=headers, proxies=proxy, timeout=5, verify=False)
+                            if r_uploads.status_code == 200 and ('Index of' in r_uploads.text or 'parent directory' in r_uploads.text):
+                                findings.append(f"{Y}[DIR LIST] Exposed Uploads: {uploads_url}{W}")
                         except:
                             pass
+                        break
+                except:
+                    continue
 
-        # Báo cáo
-        with self.lock:
-            self.processed += 1
-            if findings:
-                self.found_count += 1
-                print(f"\n{G}{BOLD}[🎯] #{self.found_count}: {decoded_domain}{W}")
-                for f in findings:
-                    print(f" |-- {f}")
-                
-                with open(self.output, 'a', encoding='utf-8') as f:
-                    clean = [re.sub(r'\033\[[0-9;]*m', '', i) for i in findings]
-                    f.write(f"TARGET: {decoded_domain}\n" + "\n".join(clean) + "\n\n")
-                
-                with open(self.weak_domains_file, 'a', encoding='utf-8') as wf:
-                    wf.write(f"{decoded_domain}\n")
-                
-                with open(self.vuln_report_json, 'a', encoding='utf-8') as jf:
-                    jf.write(json.dumps({"domain": decoded_domain, "findings": clean}, ensure_ascii=False) + "\n")
-                
-                sys.stdout.write("\a")
+            if not base_url:
+                with self.lock:
+                    self.processed += 1
+                return
 
-            # Progress với tốc độ
-            elapsed = time.time() - getattr(self, 'start_time', time.time())
-            speed = self.processed / elapsed if elapsed > 0 else 0
-            sys.stdout.write(f"\r{Y}[*] {self.processed}/{len(self.targets)} ({self.processed/len(self.targets)*100:.1f}%) | {speed:.1f} domains/sec{W}")
-            sys.stdout.flush()
+            # Quét endpoint SIÊU NHANH
+            for path, label in self.critical_endpoints:
+                try:
+                    time.sleep(0.05)  # CỰC NHANH!
+                    full_url = base_url.rstrip('/') + path
+                    r = requests.get(full_url, headers=headers, proxies=proxy, timeout=5, verify=False, allow_redirects=False)
+                    if r.status_code == 200 and len(r.content) > 20:
+                        content_preview = r.text[:300]
+                        if any(ind in content_preview for ind in ['DB_PASSWORD', '<?php', 'Index of', 'WPRESS']):
+                            findings.append(f"{R}[CRITICAL] {label}: {full_url}{W}")
+                except:
+                    continue
+
+            # Check plugin version
+            plugin_slugs = set(re.findall(r'/wp-content/plugins/([^/\'"]+)/', r_main.text.lower()))
+            if plugin_slugs and findings:  # Chỉ check nếu đã có findings
+                for slug in list(plugin_slugs)[:6]:
+                    ver = self.get_plugin_version(base_url, slug, headers, proxy)
+                    if ver not in ["N/A", "Unknown"] and slug in self.vuln_plugins:
+                        for old in self.vuln_plugins[slug]['old']:
+                            try:
+                                if old.startswith('<'):
+                                    old_ver = old[1:]
+                                    ver_num = ''.join(filter(str.isdigit, ver))
+                                    old_num = ''.join(filter(str.isdigit, old_ver))
+                                    if ver_num and old_num and int(ver_num) < int(old_num):
+                                        findings.append(f"{R}[HIGH RISK] {slug} v{ver} - {self.vuln_plugins[slug]['desc']}{W}")
+                                        break
+                            except:
+                                pass
+
+            # Báo cáo
+            with self.lock:
+                self.processed += 1
+                if findings:
+                    self.found_count += 1
+                    print(f"\n{G}{BOLD}[🎯] #{self.found_count}: {decoded_domain}{W}")
+                    for f in findings:
+                        print(f" |-- {f}")
+                    
+                    with open(self.output, 'a', encoding='utf-8') as f:
+                        clean = [re.sub(r'\033\[[0-9;]*m', '', i) for i in findings]
+                        f.write(f"TARGET: {decoded_domain}\n" + "\n".join(clean) + "\n\n")
+                    
+                    with open(self.weak_domains_file, 'a', encoding='utf-8') as wf:
+                        wf.write(f"{decoded_domain}\n")
+                    
+                    with open(self.vuln_report_json, 'a', encoding='utf-8') as jf:
+                        jf.write(json.dumps({"domain": decoded_domain, "findings": clean}, ensure_ascii=False) + "\n")
+                    
+                    sys.stdout.write("\a")
+
+                # Progress với tốc độ
+                elapsed = time.time() - getattr(self, 'start_time', time.time())
+                speed = self.processed / elapsed if elapsed > 0 else 0
+                sys.stdout.write(f"\r{Y}[*] {self.processed}/{len(self.targets)} ({self.processed/len(self.targets)*100:.1f}%) | {speed:.1f} domains/sec{W}")
+                sys.stdout.flush()
 
     def start(self, threads=80):  # 80 THREADS SIÊU MẠNH!
         self.start_time = time.time()
