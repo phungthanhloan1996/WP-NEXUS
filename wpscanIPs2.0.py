@@ -1,2641 +1,1383 @@
-import requests
-import re
-import concurrent.futures
-import urllib3
-import os
+# wpscanIPs2.1_plugin_analysis_enhanced_fixed.py
+# Thu thập domain WordPress (.vn variants) với phân tích plugin phổ biến - Phiên bản sửa lỗi hiển thị
+
 import time
-import socket
-import json
-import asyncio
-import aiohttp
-from datetime import datetime
-from threading import Lock
-from urllib.parse import urlparse, urljoin
-from collections import Counter, defaultdict
-from tqdm import tqdm
-import dns.resolver
 import random
-import hashlib
-import subprocess
+import json
+from urllib.parse import urlparse
+from ddgs import DDGS
+from tqdm import tqdm
+import re
+import os
+import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from collections import defaultdict
+import warnings
 import sys
-from typing import List, Dict, Set, Tuple, Optional, Any, Callable
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-# ==================== CẤU HÌNH ====================
-R, G, Y, B, C, M, W = '\033[91m', '\033[92m', '\033[93m', '\033[94m', '\033[96m', '\033[95m', '\033[0m'
-BOLD, UNDER = '\033[1m', '\033[4m'
+# Cấu hình
+DORKS = [
+    '"Powered by WordPress" site:.vn',
+    '"Powered by WordPress" site:.com.vn',
+    'intext:"WordPress" site:.vn generator:"WordPress"',
+    '"index of" inurl:wp-content site:.vn',
+    'inurl:/wp-content/plugins/ site:.vn',
+    'inurl:/wp-admin/ intitle:"Log In" site:.vn',
+    'inurl:wp-login.php site:.vn',
+    '"Powered by WordPress" inurl:.vn -inurl:(forum OR blogspot OR wordpress.com)',
+    'inurl:/wp-content/themes/ site:.vn',
+    'inurl:wp-config.php site:.vn',
+    '"index of /wp-content/uploads/" site:.vn',
+    'inurl:/wp-content/plugins/elementor/ site:.vn',
+    'inurl:/wp-content/plugins/woocommerce/ site:.vn',
+    'inurl:/wp-content/plugins/contact-form-7/ site:.vn',
+    'inurl:/wp-content/plugins/revslider/ site:.vn',
+    'site:.com.vn "WordPress"',
+    'site:.vn inurl:wp-json',
+    'site:.vn "xmlrpc.php"',
+]
 
-THREADS = 15
-REQUEST_TIMEOUT = 15
-RATE_LIMIT_DELAY = 0.2
-MAX_CONCURRENT_ASYNC = 100
-
-# ==================== PHASE 0: PASSIVE SOURCE ENRICHMENT ====================
-
-class PassiveSourceEnricher:
-    """Phase 0: Làm giàu nguồn targets từ dữ liệu thụ động"""
+# DANH SÁCH PLUGIN PHỔ BIẾN (TOP 50+) - Giữ nguyên
+POPULAR_PLUGINS = {
+    # 🔥 SEO & CONTENT
+    'yoast-seo': {'name': 'Yoast SEO', 'category': 'SEO', 'installs': '10M+'},
+    'wordpress-seo': {'name': 'Yoast SEO', 'category': 'SEO', 'installs': '10M+'},
+    'all-in-one-seo-pack': {'name': 'All in One SEO', 'category': 'SEO', 'installs': '3M+'},
+    'seo-by-rank-math': {'name': 'Rank Math SEO', 'category': 'SEO', 'installs': '2M+'},
     
-    def __init__(self):
-        self.sources = []
-        self.all_targets = set()
-        
-    def load_certificate_transparency(self, domain_keyword: str = None, limit: int = 1000) -> Set[str]:
-        """Lấy domains từ Certificate Transparency logs (crtsh style)"""
-        print(f"{C}[Phase 0] Querying Certificate Transparency...{W}")
-        
-        targets = set()
-        
-        # Mô phỏng query crt.sh - thực tế có thể gọi API hoặc parse HTML
-        try:
-            # Đây là mô phỏng - thực tế cần tích hợp với crt.sh API
-            ct_domains = [
-                # Các domain từ CT logs
-                "*.example.com",
-                "*.target-domain.com",
-                "*.wordpress-site.net",
-                # Subdomains thường gặp
-                "blog.*", "wp.*", "cms.*", "www.*",
-                # Gov/edu domains
-                "*.gov.vn", "*.edu.vn", "*.gov.cn", "*.ac.uk"
-            ]
-            
-            # Chuyển thành domain patterns
-            for pattern in ct_domains:
-                if domain_keyword and domain_keyword in pattern:
-                    # Simple pattern to domain conversion
-                    clean_domain = pattern.replace('*.', '').replace('*', '')
-                    if clean_domain and '.' in clean_domain:
-                        targets.add(clean_domain)
-                        
-        except Exception as e:
-            print(f"{Y}[!] CT query error: {e}{W}")
-        
-        return targets
+    # 🎨 PAGE BUILDERS
+    'elementor': {'name': 'Elementor', 'category': 'Page Builder', 'installs': '10M+'},
+    'beaver-builder-lite-version': {'name': 'Beaver Builder', 'category': 'Page Builder', 'installs': '1M+'},
+    'siteorigin-panels': {'name': 'SiteOrigin Page Builder', 'category': 'Page Builder', 'installs': '1M+'},
+    'visual-composer': {'name': 'Visual Composer', 'category': 'Page Builder', 'installs': '100K+'},
     
-    def load_public_crawl_dumps(self, file_paths: List[str] = None) -> Set[str]:
-        """Tải domains từ các public crawl dumps (CommonCrawl, Project Sonar, etc.)"""
-        
-        if file_paths is None:
-            # Tìm các file dump có sẵn
-            file_paths = [
-                'commoncrawl_domains.txt',
-                'sonar_subdomains.txt',
-                'rapid7_forward_dns.txt',
-                'alienvault_otx_domains.txt'
-            ]
-        
-        all_domains = set()
-        
-        for file_path in file_paths:
-            if os.path.exists(file_path):
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        for line in f:
-                            line = line.strip()
-                            if line and not line.startswith('#'):
-                                # Extract domain từ các định dạng khác nhau
-                                domain_match = re.search(
-                                    r'([a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
-                                    line
-                                )
-                                if domain_match:
-                                    domain = domain_match.group(1).lower()
-                                    # Loại bỏ các phần tử không hợp lệ
-                                    if not any(x in domain for x in [' ', '@', '://', '&', '=']):
-                                        all_domains.add(domain)
-                    
-                    print(f"{G}[+] Loaded {len(all_domains)} domains from {file_path}{W}")
-                except Exception as e:
-                    print(f"{Y}[!] Error loading {file_path}: {e}{W}")
-        
-        return all_domains
+    # 📝 FORMS
+    'contact-form-7': {'name': 'Contact Form 7', 'category': 'Forms', 'installs': '10M+'},
+    'wpforms-lite': {'name': 'WPForms', 'category': 'Forms', 'installs': '6M+'},
+    'wpforms': {'name': 'WPForms', 'category': 'Forms', 'installs': '6M+'},
+    'gravityforms': {'name': 'Gravity Forms', 'category': 'Forms', 'installs': '1M+'},
+    'ninja-forms': {'name': 'Ninja Forms', 'category': 'Forms', 'installs': '1M+'},
     
-    def load_historical_lists(self) -> Set[str]:
-        """Tải từ historical bug bounty targets, leak lists, paste sites"""
-        
-        historical_sources = [
-            # Bug bounty platforms history
-            'hackerone_targets.txt',
-            'bugcrowd_programs.txt',
-            'intigriti_domains.txt',
-            # Leak lists
-            'breach_compilation_domains.txt',
-            'collection_1_domains.txt',
-            # Paste sites dumps
-            'pastebin_scrape.txt',
-            'hashes_org_dumps.txt'
-        ]
-        
-        domains = set()
-        
-        # Thêm các patterns thường gặp
-        common_patterns = [
-            r'[\w.-]+\.onion',  # Tor sites
-            r'[\w.-]+\.i2p',    # I2P
-            r'[\w.-]+\.bit',    # Namecoin
-            # Gov/edu patterns
-            r'[\w.-]+\.gov\.[\w]{2,}',
-            r'[\w.-]+\.edu\.[\w]{2,}',
-            r'[\w.-]+\.ac\.[\w]{2,}',
-            r'[\w.-]+\.mil\.[\w]{2,}'
-        ]
-        
-        for pattern in common_patterns:
-            # Tạo các test domains từ patterns
-            if '.gov' in pattern:
-                domains.add('test.gov.vn')
-                domains.add('subdomain.gov.uk')
-                domains.add('agency.gov.au')
-            elif '.edu' in pattern:
-                domains.add('university.edu.vn')
-                domains.add('college.ac.uk')
-                domains.add('school.edu.au')
-        
-        return domains
+    # ⚡ CACHE & PERFORMANCE
+    'litespeed-cache': {'name': 'LiteSpeed Cache', 'category': 'Performance', 'installs': '7M+'},
+    'wp-rocket': {'name': 'WP Rocket', 'category': 'Performance', 'installs': '2M+'},
+    'w3-total-cache': {'name': 'W3 Total Cache', 'category': 'Performance', 'installs': '2M+'},
+    'wp-super-cache': {'name': 'WP Super Cache', 'category': 'Performance', 'installs': '2M+'},
+    'autoptimize': {'name': 'Autoptimize', 'category': 'Performance', 'installs': '1M+'},
     
-    def enrich_from_passive_dns(self, seed_domains: Set[str]) -> Set[str]:
-        """Sử dụng Passive DNS để tìm thêm related domains"""
-        
-        enriched = set(seed_domains)
-        
-        # Mô phỏng expansion từ seed domains
-        for domain in list(seed_domains)[:50]:  # Giới hạn để tránh quá nhiều
-            # Thêm các biến thể
-            parts = domain.split('.')
-            if len(parts) >= 2:
-                base_domain = '.'.join(parts[-2:])
-                
-                # Tạo các subdomain thường gặp
-                common_subs = ['www', 'blog', 'wp', 'cms', 'web', 'dev', 'test',
-                             'staging', 'beta', 'mobile', 'api', 'admin', 'dashboard']
-                
-                for sub in common_subs:
-                    enriched.add(f"{sub}.{base_domain}")
-                
-                # Thêm base domain chính
-                enriched.add(base_domain)
-        
-        return enriched
+    # 🛒 E-COMMERCE
+    'woocommerce': {'name': 'WooCommerce', 'category': 'E-commerce', 'installs': '7M+'},
     
-    def generate_dirty_targets(self, min_count: int = 10000) -> Set[str]:
-        """Tạo targets bẩn từ nhiều nguồn"""
-        
-        print(f"{B}[Phase 0] GENERATING DIRTY TARGETS FROM PASSIVE SOURCES{W}")
-        
-        # 1. CT logs
-        ct_targets = self.load_certificate_transparency(limit=2000)
-        print(f"{C}[*] CT logs: {len(ct_targets)} domains{W}")
-        
-        # 2. Public crawl dumps
-        crawl_targets = self.load_public_crawl_dumps()
-        print(f"{C}[*] Crawl dumps: {len(crawl_targets)} domains{W}")
-        
-        # 3. Historical lists
-        historical_targets = self.load_historical_lists()
-        print(f"{C}[*] Historical: {len(historical_targets)} domains{W}")
-        
-        # 4. Kết hợp tất cả
-        all_targets = set()
-        all_targets.update(ct_targets)
-        all_targets.update(crawl_targets)
-        all_targets.update(historical_targets)
-        
-        # 5. Enrich từ Passive DNS
-        if all_targets:
-            enriched = self.enrich_from_passive_dns(all_targets)
-            print(f"{C}[*] After Passive DNS enrichment: {len(enriched)} domains{W}")
-            all_targets.update(enriched)
-        
-        # 6. Thêm các TLD đặc biệt
-        special_tlds = ['.gov.vn', '.edu.vn', '.gov.uk', '.edu.au', 
-                       '.ac.uk', '.gov.cn', '.go.jp', '.gov.br']
-        
-        for tld in special_tlds:
-            for i in range(5):  # Thêm một số ví dụ
-                all_targets.add(f"agency{i}{tld}")
-                all_targets.add(f"university{i}{tld}")
-                all_targets.add(f"department{i}{tld}")
-        
-        print(f"{G}[✓] Total dirty targets generated: {len(all_targets)}{W}")
-        
-        # Lưu ra file
-        if all_targets:
-            output_file = 'dirty_targets.txt'
-            with open(output_file, 'w', encoding='utf-8') as f:
-                for domain in sorted(all_targets):
-                    f.write(f"{domain}\n")
-            print(f"{G}[+] Saved to {output_file}{W}")
-        
-        return all_targets
+    # 🔐 SECURITY
+    'wordfence': {'name': 'Wordfence Security', 'category': 'Security', 'installs': '5M+'},
+    'better-wp-security': {'name': 'iThemes Security', 'category': 'Security', 'installs': '1M+'},
+    'sucuri-scanner': {'name': 'Sucuri Security', 'category': 'Security', 'installs': '800K+'},
+    'all-in-one-wp-security-and-firewall': {'name': 'All In One WP Security', 'category': 'Security', 'installs': '1M+'},
+    
+    # 📧 EMAIL
+    'wp-mail-smtp': {'name': 'WP Mail SMTP', 'category': 'Email', 'installs': '5M+'},
+    'contact-form-7-to-database-extension': {'name': 'CF7 to Database', 'category': 'Forms', 'installs': '200K+'},
+    
+    # 🔄 BACKUP & MIGRATION
+    'updraftplus': {'name': 'UpdraftPlus', 'category': 'Backup', 'installs': '3M+'},
+    'all-in-one-wp-migration': {'name': 'All-in-One WP Migration', 'category': 'Migration', 'installs': '5M+'},
+    'duplicator': {'name': 'Duplicator', 'category': 'Migration', 'installs': '1M+'},
+    'backupbuddy': {'name': 'BackupBuddy', 'category': 'Backup', 'installs': '500K+'},
+    
+    # 📊 ANALYTICS
+    'google-site-kit': {'name': 'Site Kit by Google', 'category': 'Analytics', 'installs': '5M+'},
+    'monsterinsights': {'name': 'MonsterInsights', 'category': 'Analytics', 'installs': '3M+'},
+    
+    # 🖼️ IMAGE OPTIMIZATION
+    'smush': {'name': 'Smush Image Optimization', 'category': 'Performance', 'installs': '1M+'},
+    'ewww-image-optimizer': {'name': 'EWWW Image Optimizer', 'category': 'Performance', 'installs': '800K+'},
+    'imagify': {'name': 'Imagify', 'category': 'Performance', 'installs': '500K+'},
+    
+    # 🔧 EDITORS
+    'classic-editor': {'name': 'Classic Editor', 'category': 'Editor', 'installs': '9M+'},
+    'tinymce-advanced': {'name': 'Advanced Editor Tools', 'category': 'Editor', 'installs': '2M+'},
+    
+    # 🛠️ UTILITIES
+    'akismet': {'name': 'Akismet Anti-Spam', 'category': 'Security', 'installs': '6M+'},
+    'cookie-notice': {'name': 'Cookie Notice', 'category': 'Compliance', 'installs': '2M+'},
+    'really-simple-ssl': {'name': 'Really Simple SSL', 'category': 'Security', 'installs': '5M+'},
+    
+    # 📄 SLIDERS
+    'revslider': {'name': 'Revolution Slider', 'category': 'Slider', 'installs': '10M+'},
+    'smart-slider-3': {'name': 'Smart Slider 3', 'category': 'Slider', 'installs': '1M+'},
+    'ml-slider': {'name': 'MetaSlider', 'category': 'Slider', 'installs': '1M+'},
+    
+    # 🎭 CUSTOMIZATION
+    'advanced-custom-fields': {'name': 'Advanced Custom Fields', 'category': 'Custom Fields', 'installs': '2M+'},
+    'custom-post-type-ui': {'name': 'Custom Post Type UI', 'category': 'Custom Post Types', 'installs': '1M+'},
+}
 
-# ==================== HTTP CLIENT PRECISE (requests) ====================
+# CVE Database cho WordPress và plugin phổ biến
+CVE_DATABASE = {
+    'wordpress': {
+        '5.0-5.9': ['CVE-2020-28032', 'CVE-2021-44223'],
+        '4.0-4.9': ['CVE-2019-17671', 'CVE-2020-11025'],
+        '<4.0': ['CVE-2018-20148', 'CVE-2019-9787']
+    },
+    'elementor': {
+        '<3.5.0': ['CVE-2022-29455'],
+        '<3.2.0': ['CVE-2021-25028']
+    },
+    'revslider': {
+        '<6.0.0': ['CVE-2021-38392'],
+        '<5.0.0': ['CVE-2018-15505']
+    },
+    'woocommerce': {
+        '<5.0.0': ['CVE-2021-24153'],
+        '<4.0.0': ['CVE-2020-13225']
+    },
+    'contact-form-7': {
+        '<5.4.0': ['CVE-2020-35489']
+    }
+}
 
-class PreciseHTTPClient:
-    """Client chính xác cho phase 1, 2, 3 - Dùng requests"""
-    
-    def __init__(self):
+NUM_RESULTS_PER_DORK = 100
+OUTPUT_FILE = "wp_vn_domains.txt"
+DOMAIN_VULN_FILE = "vulnerable_domains.txt"
+ENHANCED_OUTPUT_FILE = "wp_enhanced_recon.json"
+DELAY_MIN = 2.0
+DELAY_MAX = 5.0
+MAX_WORKERS_DISCOVERY = 3  # Giảm để ổn định hơn
+MAX_WORKERS_RECON = 5
+TIMEOUT = 10
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Connection': 'keep-alive',
+}
+
+# Biến toàn cục để quản lý dừng chương trình
+stop_flag = False
+
+class WordPressReconEnhanced:
+    def __init__(self, domain):
+        self.domain = domain
+        self.url = f"http://{domain}"
+        self.https_url = f"https://{domain}"
+        self.base_url = None
         self.session = requests.Session()
-        self.session.max_redirects = 10
-        self.timeout = REQUEST_TIMEOUT
+        self.session.headers.update(HEADERS)
+        self.session.verify = False
+        self.confidence = 0
+        self.wp_signatures = []
+        self.results = self._init_schema()
         
-        # Random User-Agents
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/537.36'
+    def _init_schema(self):
+        """Khởi tạo schema JSON theo chuẩn mới"""
+        return {
+            "target": self.domain,
+            "scan_timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "wp": {
+                "detected": False,
+                "confidence": 0,
+                "confidence_sources": [],
+                "version": "",
+                "version_source": "",
+                "version_sources": []
+            },
+            "server": {
+                "webserver": "",
+                "webserver_version": "",
+                "php": "",
+                "php_source": "",
+                "server_full": ""
+            },
+            "plugins": [],
+            "theme": {
+                "name": "",
+                "slug": "",
+                "version": "",
+                "version_source": "",
+                "detected_version": ""
+            },
+            "endpoints": {
+                "xmlrpc": False,
+                "xmlrpc_status": "",
+                "rest_api": False,
+                "rest_api_status": "",
+                "rest_api_endpoints": [],
+                "wp_login": False,
+                "wp_admin": False,
+                "upload_dir_listing": False,
+                "upload_status": ""
+            },
+            "security_indicators": {
+                "waf_detected": "",
+                "waf_type": "",
+                "directory_listing": False,
+                "sensitive_files": [],
+                "user_enumeration": False,
+                "xmlrpc_enabled": False
+            },
+            "vulnerability_indicators": {
+                "outdated_wp": False,
+                "outdated_php": False,
+                "outdated_plugins": [],
+                "potential_issues": [],
+                "cve_matches": [],
+                "risk_score": 0
+            },
+            "plugin_analysis": {
+                "popular_plugins_found": 0,
+                "categories": defaultdict(int),
+                "plugin_combinations": []
+            },
+            "scan_metadata": {
+                "duration": 0,
+                "requests_made": 0,
+                "status": "pending"
+            }
+        }
+    
+    def _make_request(self, url, method='GET', allow_redirects=True, timeout=TIMEOUT):
+        """Thực hiện HTTP request an toàn"""
+        if stop_flag:
+            return None
+            
+        try:
+            response = self.session.request(
+                method=method,
+                url=url,
+                allow_redirects=allow_redirects,
+                timeout=timeout
+            )
+            self.results['scan_metadata']['requests_made'] += 1
+            return response
+        except Exception as e:
+            return None
+    
+    def _calculate_wp_confidence(self):
+        """Tính confidence score cho WordPress detection"""
+        confidence = 0
+        sources = []
+        
+        # Mỗi signature có trọng số khác nhau
+        signature_weights = {
+            'wp_content_structure': 20,
+            'wp_login_page': 25,
+            'wp_admin_redirect': 25,
+            'wp_json_api': 15,
+            'wp_generator_tag': 10,
+            'wp_feed': 10,
+            'wp_includes': 15,
+            'wp_config_indicators': 20
+        }
+        
+        for signature in self.wp_signatures:
+            if signature in signature_weights:
+                confidence += signature_weights[signature]
+                sources.append(signature)
+        
+        self.results['wp']['confidence'] = min(confidence, 100)
+        self.results['wp']['confidence_sources'] = sources
+        
+        # Xác định nếu là WordPress
+        self.results['wp']['detected'] = confidence >= 30  # Ngưỡng tối thiểu
+        
+    def _detect_wp_signatures(self):
+        """Phát hiện các signature của WordPress"""
+        # Kiểm tra homepage
+        response = self._make_request(self.base_url)
+        if not response:
+            return False
+        
+        html = response.text
+        headers = response.headers
+        
+        # 1. Kiểm tra /wp-content/ structure
+        if '/wp-content/' in html:
+            self.wp_signatures.append('wp_content_structure')
+        
+        # 2. Kiểm tra /wp-login.php
+        login_response = self._make_request(f"{self.base_url}/wp-login.php")
+        if login_response:
+            self.results['endpoints']['wp_login'] = True
+            if login_response.status_code < 400:
+                self.wp_signatures.append('wp_login_page')
+        
+        # 3. Kiểm tra /wp-admin/ redirect
+        admin_response = self._make_request(f"{self.base_url}/wp-admin/", allow_redirects=False)
+        if admin_response:
+            self.results['endpoints']['wp_admin'] = True
+            if admin_response.status_code in [301, 302, 307, 308]:
+                self.wp_signatures.append('wp_admin_redirect')
+        
+        # 4. Kiểm tra WordPress REST API
+        rest_response = self._make_request(f"{self.base_url}/wp-json/")
+        if rest_response:
+            self.results['endpoints']['rest_api'] = True
+            self.results['endpoints']['rest_api_status'] = f"{rest_response.status_code}"
+            
+            if rest_response.status_code == 200:
+                self.wp_signatures.append('wp_json_api')
+                try:
+                    data = rest_response.json()
+                    if 'routes' in data:
+                        self.results['endpoints']['rest_api_endpoints'] = list(data['routes'].keys())[:10]
+                except:
+                    pass
+        
+        # 5. Kiểm tra WordPress generator tag
+        if 'WordPress' in html and 'generator' in html.lower():
+            self.wp_signatures.append('wp_generator_tag')
+        
+        # 6. Kiểm tra RSS feed
+        feed_response = self._make_request(f"{self.base_url}/feed/")
+        if feed_response and feed_response.status_code == 200 and 'WordPress' in feed_response.text:
+            self.wp_signatures.append('wp_feed')
+        
+        # 7. Kiểm tra /wp-includes/
+        if '/wp-includes/' in html:
+            self.wp_signatures.append('wp_includes')
+        
+        # 8. Kiểm tra các indicators khác
+        wp_indicators = [
+            'wp-embed.min.js',
+            'wp-emoji-release.min.js',
+            'admin-ajax.php',
+            'wp_pass_req'
         ]
         
-        self._update_headers()
+        for indicator in wp_indicators:
+            if indicator in html:
+                self.wp_signatures.append('wp_config_indicators')
+                break
+        
+        return len(self.wp_signatures) > 0
     
-    def _update_headers(self):
-        """Cập nhật headers với User-Agent ngẫu nhiên"""
-        self.session.headers.update({
-            'User-Agent': random.choice(self.user_agents),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        })
+    def _detect_server_info(self, response):
+        """Phát hiện thông tin server"""
+        headers = response.headers
+        
+        # Web server
+        server_header = headers.get('Server', '')
+        if server_header:
+            self.results['server']['server_full'] = server_header
+            if '/' in server_header:
+                self.results['server']['webserver'] = server_header.split('/')[0]
+                self.results['server']['webserver_version'] = server_header.split('/')[1]
+            else:
+                self.results['server']['webserver'] = server_header
+        
+        # PHP version
+        php_header = headers.get('X-Powered-By', '')
+        if 'PHP' in php_header:
+            match = re.search(r'PHP/([\d.]+)', php_header)
+            if match:
+                self.results['server']['php'] = match.group(1)
+                self.results['server']['php_source'] = 'header'
+        else:
+            # Thử tìm trong HTML
+            html = response.text
+            php_match = re.search(r'PHP/([\d.]+)', html)
+            if php_match:
+                self.results['server']['php'] = php_match.group(1)
+                self.results['server']['php_source'] = 'html'
     
-    def head_request(self, url: str, allow_redirects: bool = True) -> Optional[requests.Response]:
-        """HEAD request với xử lý redirect và SSL"""
-        try:
-            self._update_headers()  # Xoay User-Agent
-            return self.session.head(
-                url,
-                timeout=self.timeout,
-                verify=False,
-                allow_redirects=allow_redirects
-            )
-        except Exception:
-            return None
-    
-    def get_request(self, url: str, allow_redirects: bool = False, 
-                   headers: Dict = None) -> Optional[requests.Response]:
-        """GET request với fallback cho các trường hợp đặc biệt"""
-        try:
-            self._update_headers()
-            req_headers = self.session.headers.copy()
-            if headers:
-                req_headers.update(headers)
+    def _detect_wp_version_enhanced(self):
+        """Phát hiện WordPress version với nhiều phương pháp"""
+        version_sources = []
+        detected_version = ""
+        
+        # 1. Từ meta generator (độ chính xác cao nhất)
+        response = self._make_request(self.base_url)
+        if response:
+            html = response.text
+            meta_match = re.search(r'content=["\']WordPress ([\d.]+)["\']', html)
+            if meta_match:
+                detected_version = meta_match.group(1)
+                version_sources.append(('meta', detected_version))
+                self.results['wp']['version'] = detected_version
+                self.results['wp']['version_source'] = 'meta'
+        
+        # 2. Từ CSS version (style.min.css)
+        if not detected_version:
+            css_urls = [
+                f"{self.base_url}/wp-includes/css/dist/block-library/style.min.css",
+                f"{self.base_url}/wp-includes/css/dist/block-library/style.css",
+                f"{self.base_url}/wp-content/themes/twentytwentyfour/style.css"
+            ]
             
-            return self.session.get(
-                url,
-                timeout=self.timeout,
-                verify=False,
-                allow_redirects=allow_redirects,
-                headers=req_headers
-            )
-        except Exception:
-            return None
-    
-    def post_request(self, url: str, data: str = None, 
-                    content_type: str = None) -> Optional[requests.Response]:
-        """POST request cho XML-RPC"""
-        headers = {}
-        if content_type:
-            headers['Content-Type'] = content_type
+            for css_url in css_urls:
+                css_resp = self._make_request(css_url)
+                if css_resp and css_resp.status_code == 200:
+                    # Kiểm tra URL có parameter ver
+                    if '?' in css_resp.url:
+                        match = re.search(r'ver=([\d.]+)', css_resp.url)
+                        if match:
+                            detected_version = match.group(1)
+                            version_sources.append(('css_url', detected_version))
+                            self.results['wp']['version'] = detected_version
+                            self.results['wp']['version_source'] = 'css_url'
+                            break
         
-        try:
-            self._update_headers()
-            return self.session.post(
-                url,
-                data=data,
-                headers=headers,
-                timeout=self.timeout,
-                verify=False
-            )
-        except Exception:
-            return None
-    
-    def options_request(self, url: str) -> Optional[requests.Response]:
-        """OPTIONS request cho behavior testing"""
-        try:
-            self._update_headers()
-            return self.session.options(
-                url,
-                timeout=self.timeout,
-                verify=False
-            )
-        except Exception:
-            return None
-
-# ==================== HTTP CLIENT FAST (aiohttp) ====================
-
-class FastHTTPClient:
-    """Client nhanh cho phase 3, 6 - Dùng aiohttp"""
-    
-    def __init__(self, max_concurrent: int = MAX_CONCURRENT_ASYNC):
-        self.max_concurrent = max_concurrent
-        self.semaphore = asyncio.Semaphore(max_concurrent)
-    
-    async def check_multiple_paths(self, base_url: str, paths: List[str]) -> Dict[str, Dict]:
-        """Check nhiều path cùng lúc - dùng aiohttp"""
-        results = {}
+        # 3. Từ RSS feed
+        if not detected_version:
+            rss_resp = self._make_request(f"{self.base_url}/feed/")
+            if rss_resp and rss_resp.status_code == 200:
+                match = re.search(r'generator>https://wordpress.org/\?v=([\d.]+)<', rss_resp.text)
+                if match:
+                    detected_version = match.group(1)
+                    version_sources.append(('rss', detected_version))
+                    self.results['wp']['version'] = detected_version
+                    self.results['wp']['version_source'] = 'rss'
         
-        connector = aiohttp.TCPConnector(
-            ssl=False, 
-            limit=self.max_concurrent,
-            ttl_dns_cache=300
-        )
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        # 4. Từ readme.html
+        if not detected_version:
+            readme_resp = self._make_request(f"{self.base_url}/readme.html")
+            if readme_resp and readme_resp.status_code == 200:
+                match = re.search(r'Version ([\d.]+)', readme_resp.text)
+                if match:
+                    detected_version = match.group(1)
+                    version_sources.append(('readme', detected_version))
+                    self.results['wp']['version'] = detected_version
+                    self.results['wp']['version_source'] = 'readme'
         
-        async with aiohttp.ClientSession(
-            connector=connector, 
-            timeout=timeout,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        ) as session:
-            tasks = []
-            for path in paths:
-                url = urljoin(base_url, path)
-                task = self._check_single_path(session, url, path)
-                tasks.append(task)
+        # Lưu tất cả sources
+        if version_sources:
+            self.results['wp']['version_sources'] = [
+                f"{src[0]}:{src[1]}" for src in version_sources
+            ]
             
-            path_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for path, result in zip(paths, path_results):
-                if isinstance(result, dict):
-                    results[path] = result
-        
-        return results
-    
-    async def _check_single_path(self, session: aiohttp.ClientSession, url: str, path: str) -> Dict:
-        """Check một path - HEAD method với retry"""
-        for attempt in range(2):  # Retry once
+            # Kiểm tra version cũ
             try:
-                async with session.head(url, ssl=False) as response:
-                    return {
-                        'path': path,
-                        'status': response.status,
-                        'url': str(response.url),
-                        'headers': dict(response.headers)
-                    }
-            except asyncio.TimeoutError:
-                if attempt == 0:
-                    await asyncio.sleep(0.5)  # Wait before retry
-                    continue
-                else:
-                    return {
-                        'path': path,
-                        'status': 0,
-                        'error': 'timeout'
-                    }
-            except Exception as e:
-                return {
-                    'path': path,
-                    'status': 0,
-                    'error': str(e)[:100]
-                }
-        
-        return {'path': path, 'status': 0, 'error': 'max_retries_exceeded'}
-
-# ==================== PHASE 1: LIVENESS & NORMALIZATION ====================
-
-class LivenessChecker:
-    """Phase 1: Kiểm tra site sống và chuẩn hóa - DÙNG requests (chính xác)"""
+                if detected_version:
+                    major = int(detected_version.split('.')[0])
+                    if major < 6:
+                        self.results['vulnerability_indicators']['outdated_wp'] = True
+                        self.results['vulnerability_indicators']['potential_issues'].append(
+                            f"outdated_wp:{detected_version}"
+                        )
+            except:
+                pass
     
-    def __init__(self):
-        self.client = PreciseHTTPClient()
+    def _detect_theme_enhanced(self):
+        """Phát hiện theme với version chính xác"""
+        response = self._make_request(self.base_url)
+        if not response:
+            return
+        
+        html = response.text
+        
+        # Tìm theme path từ HTML
+        theme_path = None
+        path_match = re.search(r'/wp-content/themes/([^/]+)/', html)
+        if path_match:
+            theme_path = path_match.group(1)
+        else:
+            # Thử tìm trong các links
+            all_paths = re.findall(r'/wp-content/themes/([^/]+)/', html)
+            if all_paths:
+                theme_path = all_paths[0]
+        
+        if theme_path:
+            self.results['theme']['slug'] = theme_path
+            self.results['theme']['detected_version'] = theme_path
+            
+            # Lấy thông tin chi tiết từ style.css
+            style_url = f"{self.base_url}/wp-content/themes/{theme_path}/style.css"
+            style_resp = self._make_request(style_url)
+            
+            if style_resp and style_resp.status_code == 200:
+                style_content = style_resp.text
+                
+                # Theme name
+                name_match = re.search(r'Theme Name:\s*(.+)', style_content, re.IGNORECASE)
+                if name_match:
+                    self.results['theme']['name'] = name_match.group(1).strip()
+                
+                # Theme version
+                version_match = re.search(r'Version:\s*([\d.]+)', style_content, re.IGNORECASE)
+                if version_match:
+                    self.results['theme']['version'] = version_match.group(1).strip()
+                    self.results['theme']['version_source'] = 'style.css'
     
-    def normalize_domain(self, domain: str) -> str:
-        """Chuẩn hóa domain: thêm protocol, xử lý www"""
-        domain = domain.strip().lower()
-        
-        # Loại bỏ protocol nếu có
-        domain = re.sub(r'^https?://', '', domain)
-        
-        # Loại bỏ path
-        if '/' in domain:
-            domain = domain.split('/')[0]
-        
-        # Loại bỏ www
-        if domain.startswith('www.'):
-            domain = domain[4:]
-        
-        return domain
-    
-    def check_dns(self, domain: str) -> bool:
-        """Kiểm tra DNS resolution trước"""
+    def _detect_plugins_enhanced(self):
+        """
+        Phát hiện plugin WordPress + version (clean, scalable, CVE-ready)
+        """
+        # Import tại đây để tránh lỗi nếu không có module
         try:
-            # Thử cả IPv4 và IPv6
-            socket.getaddrinfo(domain, None)
-            return True
+            from plugin_version import detect_plugin_version
+        except ImportError:
+            # Fallback nếu không có module plugin_version
+            def detect_plugin_version(base_url, plugin_slug):
+                return {"detected": False, "version": None, "source": None, "confidence": "low"}
+        
+        plugins_found = []
+        popular_count = 0
+        categories = defaultdict(int)
+
+        scanned_slugs = set()
+
+        # 1️⃣ Detect plugin từ HTML (passive)
+        response = self._make_request(self.base_url)
+        if response:
+            html = response.text
+            html_slugs = set(re.findall(r'/wp-content/plugins/([^/]+)/', html))
+            scanned_slugs.update(list(html_slugs)[:20])  # giới hạn
+
+        # 2️⃣ Chủ động probe plugin phổ biến (active)
+        for slug in list(POPULAR_PLUGINS.keys())[:15]:
+            scanned_slugs.add(slug)
+
+        # 3️⃣ Scan từng plugin
+        for plugin_slug in scanned_slugs:
+            plugin_data = {
+                "slug": plugin_slug,
+                "detected": False,
+                "version": None,
+                "version_source": None,
+                "confidence": "low",
+                "category": "Unknown",
+                "popular": False,
+                "popular_info": None
+            }
+
+            # Popular plugin mapping
+            plugin_key = plugin_slug.lower().replace('_', '-')
+            if plugin_key in POPULAR_PLUGINS:
+                plugin_data["popular"] = True
+                plugin_data["popular_info"] = POPULAR_PLUGINS[plugin_key]
+                plugin_data["category"] = POPULAR_PLUGINS[plugin_key]["category"]
+
+            # 4️⃣ Lấy version bằng module chuẩn
+            try:
+                version_info = detect_plugin_version(self.base_url, plugin_slug)
+            except Exception:
+                version_info = {"detected": False}
+
+            if not version_info["detected"]:
+                continue  # plugin không tồn tại thật
+
+            plugin_data["detected"] = True
+            plugin_data["version"] = version_info.get("version")
+            plugin_data["version_source"] = version_info.get("source")
+            plugin_data["confidence"] = version_info.get("confidence", "low")
+
+            plugins_found.append(plugin_data)
+
+            # Thống kê
+            if plugin_data["popular"]:
+                popular_count += 1
+                categories[plugin_data["category"]] += 1
+
+        # 5️⃣ Update results
+        self.results["plugins"] = plugins_found
+        self.results["plugin_analysis"]["popular_plugins_found"] = popular_count
+        self.results["plugin_analysis"]["categories"] = dict(categories)
+
+        # 6️⃣ Plugin combination analysis
+        popular_slugs = [p["slug"] for p in plugins_found if p["popular"]]
+        if len(popular_slugs) >= 2:
+            self.results["plugin_analysis"]["plugin_combinations"] = \
+                self._find_common_combinations(popular_slugs)
+    
+    def _check_cve_vulnerabilities(self):
+        """Kiểm tra CVE dựa trên version"""
+        cve_matches = []
+        
+        # Kiểm tra WordPress core
+        wp_version = self.results['wp']['version']
+        if wp_version:
+            for version_range, cves in CVE_DATABASE.get('wordpress', {}).items():
+                if self._check_version_in_range(wp_version, version_range):
+                    for cve in cves:
+                        cve_matches.append({
+                            'component': 'wordpress',
+                            'version': wp_version,
+                            'cve': cve,
+                            'type': 'core'
+                        })
+        
+        # Kiểm tra plugins
+        for plugin in self.results['plugins']:
+            if plugin.get('version') and plugin.get('slug'):
+                plugin_slug = plugin['slug']
+                plugin_version = plugin['version']
+                
+                for plugin_name in CVE_DATABASE.keys():
+                    if plugin_name != 'wordpress' and plugin_name in plugin_slug.lower():
+                        for version_range, cves in CVE_DATABASE.get(plugin_name, {}).items():
+                            if self._check_version_in_range(plugin_version, version_range):
+                                for cve in cves:
+                                    cve_matches.append({
+                                        'component': plugin_name,
+                                        'version': plugin_version,
+                                        'cve': cve,
+                                        'type': 'plugin'
+                                    })
+        
+        self.results['vulnerability_indicators']['cve_matches'] = cve_matches
+    
+    def _check_version_in_range(self, version, version_range):
+        """Kiểm tra version có nằm trong range không"""
+        try:
+            if version_range.startswith('<'):
+                max_version = version_range[1:]
+                return self._compare_versions(version, max_version) < 0
+            elif '-' in version_range:
+                min_ver, max_ver = version_range.split('-')
+                return (self._compare_versions(version, min_ver) >= 0 and 
+                       self._compare_versions(version, max_ver) <= 0)
+            return False
         except:
             return False
     
-    def check_liveness(self, domain: str) -> Dict[str, Any]:
-        """KIỂM TRA SỐNG: LUÔN THỬ CẢ HTTP VÀ HTTPS"""
-        result = {
-            'domain': domain,
-            'normalized': self.normalize_domain(domain),
-            'alive': False,
-            'protocol': None,
-            'final_url': None,
-            'status_code': 0,
-            'response_time': 0,
-            'error': None,
-            'redirect_chain': []
-        }
+    def _compare_versions(self, v1, v2):
+        """So sánh hai version string"""
+        v1_parts = list(map(int, v1.split('.')[:3]))
+        v2_parts = list(map(int, v2.split('.')[:3]))
         
-        # Check DNS trước
-        if not self.check_dns(domain):
-            result['error'] = 'DNS resolution failed'
-            return result
+        # Padding với 0 nếu cần
+        while len(v1_parts) < 3:
+            v1_parts.append(0)
+        while len(v2_parts) < 3:
+            v2_parts.append(0)
         
-        # LUẬT: LUÔN THỬ CẢ HTTP VÀ HTTPS
-        protocols_to_try = [
-            ('https', f'https://{domain}'),
-            ('http', f'http://{domain}')
-        ]
-        
-        for protocol, url in protocols_to_try:
-            try:
-                start_time = time.time()
-                
-                # HEAD request trước
-                resp = self.client.head_request(url, allow_redirects=True)
-                
-                if resp is None:
-                    continue
-                
-                elapsed = time.time() - start_time
-                
-                # Nếu HEAD thành công
-                if resp.status_code < 500:
-                    result.update({
-                        'alive': True,
-                        'protocol': protocol,
-                        'final_url': str(resp.url),
-                        'status_code': resp.status_code,
-                        'response_time': elapsed,
-                        'error': None
-                    })
-                    return result
-                
-                # Nếu 403/405 thì thử GET
-                if resp.status_code in [403, 405, 429]:
-                    start_time = time.time()
-                    resp_get = self.client.get_request(url, allow_redirects=False)
-                    elapsed = time.time() - start_time
-                    
-                    if resp_get and resp_get.status_code < 500:
-                        result.update({
-                            'alive': True,
-                            'protocol': protocol,
-                            'final_url': str(resp_get.url) if hasattr(resp_get, 'url') else url,
-                            'status_code': resp_get.status_code,
-                            'response_time': elapsed,
-                            'error': None
-                        })
-                        return result
-                        
-            except Exception as e:
-                continue
-        
-        return result
+        for i in range(3):
+            if v1_parts[i] != v2_parts[i]:
+                return v1_parts[i] - v2_parts[i]
+        return 0
     
-    def normalize_entity(self, liveness_result: Dict) -> str:
-        """Chuẩn hóa thành 1 entity duy nhất cho 1 host"""
-        if not liveness_result['alive']:
-            return liveness_result['normalized']
+    def _calculate_risk_score(self):
+        """Tính điểm risk tổng thể"""
+        risk_score = 0
         
-        final_url = liveness_result['final_url']
-        if not final_url:
-            return liveness_result['normalized']
+        # WordPress cũ
+        if self.results['vulnerability_indicators']['outdated_wp']:
+            risk_score += 30
         
-        parsed = urlparse(final_url)
+        # PHP cũ
+        if self.results['vulnerability_indicators']['outdated_php']:
+            risk_score += 20
         
-        # Loại bỏ www
-        netloc = parsed.netloc.lower()
-        if netloc.startswith('www.'):
-            netloc = netloc[4:]
+        # XMLRPC enabled
+        if self.results['security_indicators']['xmlrpc_enabled']:
+            risk_score += 15
         
-        # Chuẩn hóa protocol
-        scheme = parsed.scheme.lower() if parsed.scheme else 'http'
+        # Directory listing
+        if self.results['security_indicators']['directory_listing']:
+            risk_score += 10
         
-        return f"{scheme}://{netloc}"
-
-# ==================== PHASE 2: WP DETECTION (MULTI-VECTOR ENHANCED) ====================
-
-class EnhancedWPDetector:
-    """Phase 2: Phát hiện WP bằng nhiều vector - Kết hợp static + behavioral"""
+        # User enumeration
+        if self.results['security_indicators']['user_enumeration']:
+            risk_score += 10
+        
+        # Sensitive files
+        risk_score += len(self.results['security_indicators']['sensitive_files']) * 5
+        
+        # CVE matches
+        risk_score += len(self.results['vulnerability_indicators']['cve_matches']) * 25
+        
+        # Confidence thấp
+        if self.results['wp']['confidence'] < 40:
+            risk_score += 10
+        
+        # Nhiều plugin
+        if len(self.results['plugins']) > 30:
+            risk_score += 5
+        
+        self.results['vulnerability_indicators']['risk_score'] = min(risk_score, 100)
     
-    def __init__(self):
-        self.client = PreciseHTTPClient()
+    def _find_common_combinations(self, plugin_slugs):
+        """Tìm các combination phổ biến giữa các plugin"""
+        combinations = []
+        
+        # SEO + Form + Page Builder
+        seo_plugins = ['yoast-seo', 'wordpress-seo', 'all-in-one-seo-pack', 'seo-by-rank-math']
+        form_plugins = ['contact-form-7', 'wpforms', 'wpforms-lite', 'gravityforms', 'ninja-forms']
+        page_builders = ['elementor', 'beaver-builder-lite-version', 'visual-composer']
+        
+        has_seo = any(p in plugin_slugs for p in seo_plugins)
+        has_form = any(p in plugin_slugs for p in form_plugins)
+        has_builder = any(p in plugin_slugs for p in page_builders)
+        
+        if has_seo and has_form and has_builder:
+            combinations.append("SEO + Form + Page Builder")
+        
+        # Security stack
+        security_plugins = ['wordfence', 'better-wp-security', 'sucuri-scanner', 'all-in-one-wp-security-and-firewall']
+        cache_plugins = ['litespeed-cache', 'wp-rocket', 'w3-total-cache', 'wp-super-cache']
+        
+        has_security = any(p in plugin_slugs for p in security_plugins)
+        has_cache = any(p in plugin_slugs for p in cache_plugins)
+        
+        if has_security and has_cache:
+            combinations.append("Security + Cache")
+        
+        # E-commerce stack
+        if 'woocommerce' in plugin_slugs:
+            combinations.append("E-commerce Base")
+            if has_seo:
+                combinations.append("WooCommerce + SEO")
+        
+        return combinations
     
-    def detect_via_direct_endpoints(self, base_url: str) -> List[Dict]:
-        """Vector 1: Direct endpoints - mạnh nhất"""
-        endpoints = [
-            '/wp-login.php',
-            '/wp-admin/',
-            '/wp-json/',
-            '/feed/',
-            '/?feed=rss2',
-            '/xmlrpc.php',
-            '/wp-links-opml.php',
-            '/wp-cron.php'
-        ]
+    def _check_security_endpoints(self):
+        """Kiểm tra các endpoint liên quan đến bảo mật"""
+        # XML-RPC
+        xmlrpc_resp = self._make_request(f"{self.base_url}/xmlrpc.php")
+        if xmlrpc_resp:
+            self.results['endpoints']['xmlrpc'] = True
+            self.results['endpoints']['xmlrpc_status'] = f"{xmlrpc_resp.status_code}"
+            if xmlrpc_resp.status_code < 400:
+                self.results['security_indicators']['xmlrpc_enabled'] = True
         
-        findings = []
-        for endpoint in endpoints:
-            url = urljoin(base_url, endpoint)
-            resp = self.client.head_request(url, allow_redirects=False)
-            
-            if resp and resp.status_code in [200, 301, 302, 401, 403, 405]:
-                confidence = 95 if endpoint in ['/wp-login.php', '/wp-admin/', '/xmlrpc.php'] else 85
-                findings.append({
-                    'vector': 'DIRECT_ENDPOINT',
-                    'endpoint': endpoint,
-                    'status': resp.status_code,
-                    'confidence': confidence
-                })
+        # Directory listing
+        uploads_resp = self._make_request(f"{self.base_url}/wp-content/uploads/")
+        if uploads_resp:
+            self.results['endpoints']['upload_status'] = f"{uploads_resp.status_code}"
+            if uploads_resp.status_code == 200:
+                if 'Index of' in uploads_resp.text or '<title>Index of' in uploads_resp.text.lower():
+                    self.results['endpoints']['upload_dir_listing'] = True
+                    self.results['security_indicators']['directory_listing'] = True
         
-        return findings
-    
-    def detect_via_behavioral_signals(self, base_url: str) -> List[Dict]:
-        """Vector 2: Behavioral signals (POST, OPTIONS, 404 patterns)"""
-        findings = []
-        
-        # 1. XML-RPC với body rỗng
-        xmlrpc_url = urljoin(base_url, '/xmlrpc.php')
-        empty_xml = '<?xml version="1.0"?>'
-        resp_post = self.client.post_request(xmlrpc_url, data=empty_xml, content_type='text/xml')
-        
-        if resp_post and resp_post.status_code == 200:
-            # Check for XML-RPC fault pattern
-            if 'faultCode' in resp_post.text or 'parse error' in resp_post.text.lower():
-                findings.append({
-                    'vector': 'BEHAVIORAL',
-                    'type': 'XMLRPC_EMPTY_RESPONSE',
-                    'details': 'XML-RPC responds to empty request with XML-RPC fault',
-                    'confidence': 92
-                })
-        
-        # 2. OPTIONS request to REST API
-        rest_url = urljoin(base_url, '/wp-json/')
-        resp_options = self.client.options_request(rest_url)
-        
-        if resp_options:
-            allow_header = resp_options.headers.get('Allow', '')
-            if any(method in allow_header for method in ['GET', 'POST', 'OPTIONS']):
-                findings.append({
-                    'vector': 'BEHAVIORAL',
-                    'type': 'REST_API_OPTIONS',
-                    'details': f'REST API allows methods: {allow_header}',
-                    'confidence': 88
-                })
-        
-        # 3. 404 Error Signature
-        random_url = urljoin(base_url, f'/nonexistent-{random.randint(10000, 99999)}.html')
-        resp_404 = self.client.get_request(random_url, allow_redirects=False)
-        
-        if resp_404 and resp_404.status_code == 404:
-            html = resp_404.text.lower()
-            # WordPress 404 patterns
-            patterns = [
-                (r'error 404', 'WP_404_TITLE'),
-                (r'page not found', 'WP_404_MESSAGE'),
-                (r'/wp-content/themes/', 'WP_404_THEME_PATH'),
-                (r'search form', 'WP_404_SEARCH_FORM')
-            ]
-            
-            for pattern, pattern_type in patterns:
-                if re.search(pattern, html):
-                    findings.append({
-                        'vector': 'BEHAVIORAL',
-                        'type': '404_SIGNATURE',
-                        'details': f'WordPress 404 pattern: {pattern_type}',
-                        'confidence': 75
-                    })
-        
-        return findings
-    
-    def detect_via_cookie_patterns(self, base_url: str) -> List[Dict]:
-        """Vector 3: Cookie patterns"""
-        findings = []
-        
-        resp = self.client.get_request(base_url, allow_redirects=False)
-        if not resp:
-            return findings
-        
-        cookies = resp.cookies
-        
-        # Check for WordPress cookie patterns
-        wp_cookie_patterns = [
-            r'wordpress_(?!test_)[a-zA-Z0-9_]+',  # wordpress_logged_in, etc
-            r'wp-settings(-time)?-\d+',
-            r'comment_author_[a-zA-Z0-9_]+',
-            r'woocommerce_[a-zA-Z0-9_]+'
-        ]
-        
-        for cookie in cookies:
-            cookie_name = str(cookie.name)
-            for pattern in wp_cookie_patterns:
-                if re.match(pattern, cookie_name):
-                    findings.append({
-                        'vector': 'COOKIE_PATTERN',
-                        'type': 'WP_COOKIE',
-                        'cookie': cookie_name,
-                        'confidence': 90
-                    })
-                    break
-        
-        # Check Set-Cookie header
-        set_cookie = resp.headers.get('Set-Cookie', '')
-        if 'wordpress_' in set_cookie.lower():
-            findings.append({
-                'vector': 'COOKIE_PATTERN',
-                'type': 'WP_SET_COOKIE',
-                'details': 'WordPress cookie in Set-Cookie header',
-                'confidence': 85
-            })
-        
-        return findings
-    
-    def detect_via_http_headers(self, base_url: str) -> List[Dict]:
-        """Vector 4: HTTP Headers (enhanced)"""
-        findings = []
-        
-        resp = self.client.get_request(base_url, allow_redirects=False)
-        if not resp:
-            return findings
-        
-        headers = resp.headers
-        
-        # X-Pingback header
-        if 'x-pingback' in headers:
-            findings.append({
-                'vector': 'HTTP_HEADER',
-                'type': 'X-Pingback',
-                'value': headers['x-pingback'],
-                'confidence': 90
-            })
-        
-        # Link header với api.w.org
-        if 'Link' in headers and 'api.w.org' in headers['Link']:
-            findings.append({
-                'vector': 'HTTP_HEADER',
-                'type': 'Link',
-                'value': headers['Link'],
-                'confidence': 85
-            })
-        
-        # X-Powered-By: PHP/...
-        if 'x-powered-by' in headers:
-            xpb = headers['x-powered-by'].lower()
-            if 'php' in xpb:
-                findings.append({
-                    'vector': 'HTTP_HEADER',
-                    'type': 'X-Powered-By',
-                    'value': headers['x-powered-by'],
-                    'confidence': 70
-                })
-        
-        # Server header với Apache/nginx + PHP
-        server_header = headers.get('Server', '').lower()
-        if ('apache' in server_header or 'nginx' in server_header) and 'php' in server_header:
-            findings.append({
-                'vector': 'HTTP_HEADER',
-                'type': 'Server',
-                'value': headers['Server'],
-                'confidence': 65
-            })
-        
-        return findings
-    
-    def detect_via_html_artifacts(self, base_url: str) -> List[Dict]:
-        """Vector 5: HTML artifacts (low-trust, context-aware)"""
-        findings = []
-
-        resp = self.client.get_request(base_url, allow_redirects=True)
-        if not resp or not resp.text:
-            return findings
-
-        html = resp.text.lower()
-
-        artifact_patterns = [
-            (r'(?:src|href)=["\'][^"\']*/wp-content/(?:themes|plugins|uploads|mu-plugins)/', 'WP_CONTENT_RESOURCE', 45),
-            (r'(?:src|href)=["\'][^"\']*/wp-includes/(?:js|css|images)/', 'WP_INCLUDES_RESOURCE', 45),
-            (r'(?:src|href)=["\'][^"\']*wp-embed(\.min)?\.js', 'WP_EMBED_SCRIPT', 55),
-            (r'id=["\']wpadminbar["\']', 'WP_ADMIN_BAR', 70),
-            (r'wp-block-', 'WP_GUTENBERG_BLOCK', 50),
-            (r'<meta[^>]+name=["\']generator["\'][^>]+wordpress', 'WP_GENERATOR_META', 30),
-        ]
-
-        for pattern, artifact_type, confidence in artifact_patterns:
-            if re.search(pattern, html):
-                findings.append({
-                    "vector": "HTML_ARTIFACT",
-                    "type": artifact_type,
-                    "confidence": confidence
-                })
-
-        # Comment analysis = VERY LOW TRUST
-        comments = re.findall(r'<!--.*?-->', html, re.DOTALL)
-        for comment in comments[:20]:  # limit noise
-            c = comment.lower()
-            if 'wordpress' in c or 'wp-' in c:
-                findings.append({
-                    "vector": "HTML_ARTIFACT",
-                    "type": "WP_HTML_COMMENT",
-                    "confidence": 20
-                })
-                break
-
-        return findings
-
-    
-    def detect_via_rest_api_behavior(self, base_url: str) -> List[Dict]:
-        """Vector 6: REST API behavior (high-trust WP signal)"""
-        findings = []
-
-        endpoints = [
-            '/wp-json/',
-            '/wp-json/wp/v2/',
-        ]
-
-        for ep in endpoints:
-            rest_url = urljoin(base_url, ep)
-            resp = self.client.get_request(rest_url, allow_redirects=False)
-            if not resp:
-                continue
-
-            ct = resp.headers.get('Content-Type', '').lower()
-
-            # WP REST normally returns JSON even on error
-            if 'application/json' not in ct:
-                continue
-
-            try:
-                data = json.loads(resp.text)
-            except:
-                continue
-
-            # Strong WP patterns
-            if isinstance(data, dict):
-                if 'routes' in data and 'namespace' in data:
-                    findings.append({
-                        "vector": "REST_API_BEHAVIOR",
-                        "type": "WP_REST_INDEX",
-                        "confidence": 95
-                    })
-                    return findings  # đủ mạnh, khỏi test thêm
-
-                if data.get('code') in ('rest_no_route', 'rest_disabled'):
-                    findings.append({
-                        "vector": "REST_API_BEHAVIOR",
-                        "type": f"WP_REST_ERROR_{data.get('code')}",
-                        "confidence": 90
-                    })
-
-            # 403 REST is still WP-ish
-            if resp.status_code == 403:
-                findings.append({
-                    "vector": "REST_API_BEHAVIOR",
-                    "type": "WP_REST_FORBIDDEN",
-                    "confidence": 70
-                })
-
-        return findings
-
-    
-    def detect_via_mixed_content(self, base_url: str) -> List[Dict]:
-        """Vector 7: Mixed content analysis (HTTPS site loading HTTP WP resources)"""
-        findings = []
-
-        parsed = urlparse(base_url)
-        if parsed.scheme != "https":
-            return findings
-
-        resp = self.client.get_request(base_url, allow_redirects=True)
-        if not resp or not resp.text:
-            return findings
-
-        html = resp.text.lower()
-        base_domain = parsed.netloc
-
-        # Chỉ bắt src / href / action để giảm noise
-        http_links = re.findall(
-            r'(?:src|href|action)=["\'](http://[^"\']+)["\']',
-            html
-        )
-
-        wp_internal = set()
-        for link in http_links:
-            lp = urlparse(link)
-            if lp.netloc and base_domain in lp.netloc:
-                if any(x in lp.path for x in (
-                    '/wp-content/',
-                    '/wp-includes/',
-                    '/wp-json/',
-                    '/wp-admin/'
-                )):
-                    wp_internal.add(link)
-
-        if wp_internal:
-            findings.append({
-                "vector": "MIXED_CONTENT",
-                "type": "INTERNAL_HTTP_WP_RESOURCE",
-                "count": len(wp_internal),
-                "examples": list(wp_internal)[:3],
-                "confidence": 35
-            })
-
-        return findings
-
-    
-    def detect_wordpress(self, base_url: str) -> Dict[str, Any]:
-        """PHÁT HIỆN WP: ≥ 2 VECTOR DƯƠNG TÍNH → WP (ENHANCED, FIXED)"""
-
-        all_findings = []
-        all_findings.extend(self.detect_via_direct_endpoints(base_url))
-        all_findings.extend(self.detect_via_behavioral_signals(base_url))
-        all_findings.extend(self.detect_via_cookie_patterns(base_url))
-        all_findings.extend(self.detect_via_http_headers(base_url))
-        all_findings.extend(self.detect_via_html_artifacts(base_url))
-        all_findings.extend(self.detect_via_rest_api_behavior(base_url))
-        all_findings.extend(self.detect_via_mixed_content(base_url))
-
-        # --- FIX 1: group theo VECTOR ---
-        vectors = {}
-        for f in all_findings:
-            v = f.get("vector", "UNKNOWN")
-            vectors.setdefault(v, []).append(f)
-
-        positive_vectors = list(vectors.keys())
-
-        # LUẬT BẤT DI BẤT DỊCH
-        is_wordpress = len(positive_vectors) >= 2
-
-        # --- FIX 2: confidence theo VECTOR, không theo finding ---
-        confidence = 0.0
-        if is_wordpress:
-            vector_scores = []
-            for v, fs in vectors.items():
-                max_conf = max(f.get("confidence", 0) for f in fs)
-                vector_scores.append(max_conf)
-
-            # mỗi vector đóng góp, nhưng diminishing return
-            confidence = min(
-                100,
-                sum(vector_scores) * 0.9
-            )
-
-        return {
-            "is_wordpress": is_wordpress,
-            "confidence": round(confidence, 1),
-            "vector_count": len(positive_vectors),
-            "vector_breakdown": {v: len(fs) for v, fs in vectors.items()},
-            "findings": all_findings,
-            "base_url": base_url,
-            "timestamp": datetime.now().isoformat()
-        }
-
-# ==================== PHASE 3: SURFACE MAPPING (ENHANCED) ====================
-
-class EnhancedSurfaceMapper:
-    """Phase 3: Map bề mặt tấn công - Plugin/Theme fingerprinting"""
-    
-    def __init__(self):
-        self.precise_client = PreciseHTTPClient()
-        self.fast_client = FastHTTPClient()
-        self.plugin_signatures = self._load_plugin_signatures()
-        self.theme_signatures = self._load_theme_signatures()
-    
-    def _load_plugin_signatures(self) -> Dict[str, Dict]:
-        """Tải plugin signatures từ file hoặc built-in"""
-        signatures = {}
-        
-        # Common WordPress plugins với signatures
-        common_plugins = {
-            'contact-form-7': {
-                'paths': ['/wp-content/plugins/contact-form-7/'],
-                'files': ['/wp-content/plugins/contact-form-7/readme.txt',
-                         '/wp-content/plugins/contact-form-7/includes/css/styles.css'],
-                'html_patterns': [r'contact-form-7', r'wpcf7']
-            },
-            'woocommerce': {
-                'paths': ['/wp-content/plugins/woocommerce/'],
-                'files': ['/wp-content/plugins/woocommerce/readme.txt',
-                         '/wp-content/plugins/woocommerce/assets/css/woocommerce.css'],
-                'html_patterns': [r'woocommerce', r'wc-']
-            },
-            'elementor': {
-                'paths': ['/wp-content/plugins/elementor/'],
-                'files': ['/wp-content/plugins/elementor/readme.txt',
-                         '/wp-content/plugins/elementor/assets/css/frontend.css'],
-                'html_patterns': [r'elementor', r'e-']
-            },
-            'yoast-seo': {
-                'paths': ['/wp-content/plugins/wordpress-seo/'],
-                'files': ['/wp-content/plugins/wordpress-seo/readme.txt',
-                         '/wp-content/plugins/wordpress-seo/css/dist/yoast-seo.css'],
-                'html_patterns': [r'yoast', r'yoast-seo']
-            },
-            'akismet': {
-                'paths': ['/wp-content/plugins/akismet/'],
-                'files': ['/wp-content/plugins/akismet/readme.txt',
-                         '/wp-content/plugins/akismet/_inc/akismet.css'],
-                'html_patterns': [r'akismet']
-            }
-        }
-        
-        return common_plugins
-    
-    def _load_theme_signatures(self) -> Dict[str, Dict]:
-        """Tải theme signatures"""
-        signatures = {
-            'twentytwentyfour': {
-                'paths': ['/wp-content/themes/twentytwentyfour/'],
-                'files': ['/wp-content/themes/twentytwentyfour/style.css',
-                         '/wp-content/themes/twentytwentyfour/readme.txt'],
-                'html_patterns': [r'twentytwentyfour', r'tt4']
-            },
-            'astra': {
-                'paths': ['/wp-content/themes/astra/'],
-                'files': ['/wp-content/themes/astra/style.css',
-                         '/wp-content/themes/astra/readme.txt'],
-                'html_patterns': [r'astra', r'ast-']
-            },
-            'generatepress': {
-                'paths': ['/wp-content/themes/generatepress/'],
-                'files': ['/wp-content/themes/generatepress/style.css',
-                         '/wp-content/themes/generatepress/readme.txt'],
-                'html_patterns': [r'generatepress', r'gp-']
-            },
-            'oceanwp': {
-                'paths': ['/wp-content/themes/oceanwp/'],
-                'files': ['/wp-content/themes/oceanwp/style.css',
-                         '/wp-content/themes/oceanwp/readme.txt'],
-                'html_patterns': [r'oceanwp', r'owp-']
-            }
-        }
-        
-        return signatures
-    
-    def map_critical_surface(self, base_url: str) -> Dict[str, Any]:
-        """Map bề mặt quan trọng - DÙNG requests (chính xác)"""
-        
-        results = {
-            'xmlrpc': self._check_xmlrpc_enhanced(base_url),
-            'rest_api': self._check_rest_api_enhanced(base_url),
-            'user_enumeration': self._check_user_enumeration_enhanced(base_url),
-            'login_exposed': self._check_login_exposed_enhanced(base_url),
-            'upload_dir': self._check_upload_directory(base_url)
-        }
-        
-        return results
-    
-    def map_passive_surface(self, base_url: str) -> Dict[str, Any]:
-        """Map bề mặt thụ động - DÙNG aiohttp (nhanh)"""
-        
-        # Tạo danh sách path để check
-        paths_to_check = []
-        
-        # Sensitive files (expanded)
+        # Sensitive files
         sensitive_files = [
-            '/.env', '/.env.production', '/.env.local', '/.env.development',
-            '/wp-config.php', '/wp-config.php.bak', '/wp-config.php.save',
-            '/wp-config.php.old', '/wp-config.php.backup',
-            '/config.php', '/configuration.php', '/settings.php',
-            '/backup.sql', '/database.sql', '/dump.sql', '/export.sql',
-            '/backup.zip', '/database.zip', '/site.zip',
-            '/error_log', '/debug.log', '/php_errors.log',
-            '/phpinfo.php', '/info.php', '/test.php', '/admin.php'
+            '/wp-config.php',
+            '/wp-config.php.bak',
+            '/wp-config.php~',
+            '/.env',
+            '/.git/HEAD',
+            '/backup.zip',
+            '/phpinfo.php',
+            '/debug.log'
         ]
         
-        # Plugin paths từ signatures
-        for plugin_name, plugin_info in self.plugin_signatures.items():
-            for file_path in plugin_info['files'][:2]:  # Chỉ lấy 2 file đầu
-                paths_to_check.append(file_path)
-            for path in plugin_info['paths']:
-                paths_to_check.append(path)
+        for file_path in sensitive_files:
+            file_resp = self._make_request(f"{self.base_url}{file_path}")
+            if file_resp and file_resp.status_code == 200:
+                self.results['security_indicators']['sensitive_files'].append(file_path)
         
-        # Theme paths
-        for theme_name, theme_info in self.theme_signatures.items():
-            for file_path in theme_info['files'][:2]:
-                paths_to_check.append(file_path)
-            for path in theme_info['paths']:
-                paths_to_check.append(path)
+        # User enumeration via REST API
+        if self.results['endpoints']['rest_api']:
+            users_resp = self._make_request(f"{self.base_url}/wp-json/wp/v2/users")
+            if users_resp and users_resp.status_code == 200:
+                try:
+                    users_data = users_resp.json()
+                    if len(users_data) > 0:
+                        self.results['security_indicators']['user_enumeration'] = True
+                except:
+                    pass
         
-        # Upload directories
-        upload_paths = [
-            '/wp-content/uploads/',
-            '/wp-content/uploads/2024/',
-            '/wp-content/uploads/2023/',
-            '/uploads/',
-            '/files/',
-            '/media/'
-        ]
-        
-        # Directory listing check
-        dir_paths = [
-            '/wp-content/uploads/',
-            '/wp-content/plugins/',
-            '/wp-content/themes/',
-            '/wp-includes/',
-            '/wp-admin/',
-            '/wp-content/'
-        ]
-        
-        paths_to_check.extend(sensitive_files)
-        paths_to_check.extend(upload_paths)
-        paths_to_check.extend(dir_paths)
-        
-        # Dùng aiohttp để check nhanh
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            path_results = loop.run_until_complete(
-                self.fast_client.check_multiple_paths(base_url, paths_to_check)
-            )
-            loop.close()
-        except Exception as e:
-            print(f"{Y}[!] Async error in surface mapping: {e}{W}")
-            path_results = {}
-        
-        # Phân tích kết quả
-        return self._analyze_path_results(path_results, base_url)
-    
-    def _analyze_path_results(self, path_results: Dict, base_url: str) -> Dict:
-        """Phân tích kết quả path checking"""
-        
-        exposed_files = []
-        directory_listings = []
-        detected_plugins = []
-        detected_themes = []
-        
-        for path, result in path_results.items():
-            status = result.get('status', 0)
+        # WAF Detection
+        response = self._make_request(self.base_url)
+        if response:
+            headers_str = str(response.headers).lower()
+            server_str = str(response.headers.get('Server', '')).lower()
             
-            if status == 200:
-                # Kiểm tra plugin detection
-                for plugin_name, plugin_info in self.plugin_signatures.items():
-                    if any(plugin_path in path for plugin_path in plugin_info['paths'] + plugin_info['files']):
-                        if plugin_name not in detected_plugins:
-                            detected_plugins.append({
-                                'name': plugin_name,
-                                'path': path,
-                                'confidence': 90
-                            })
-                
-                # Kiểm tra theme detection
-                for theme_name, theme_info in self.theme_signatures.items():
-                    if any(theme_path in path for theme_path in theme_info['paths'] + theme_info['files']):
-                        if theme_name not in detected_themes:
-                            detected_themes.append({
-                                'name': theme_name,
-                                'path': path,
-                                'confidence': 90
-                            })
-                
-                # Exposed file
-                if any(x in path for x in ['.env', 'config', 'sql', 'backup', 'log', 'phpinfo']):
-                    risk = 'critical' if any(x in path for x in ['.env', 'config.php', 'backup.sql']) else 'high'
-                    exposed_files.append({
-                        'path': path,
-                        'status': 200,
-                        'risk': risk,
-                        'type': self._classify_file_type(path)
-                    })
-                
-                # Directory listing check
-                elif any(p in path for p in ['/uploads/', '/plugins/', '/themes/', '/includes/', '/admin/']):
-                    # Cần GET request để xác định directory listing
-                    # Tạm thời đánh dấu
-                    directory_listings.append({
-                        'directory': path,
-                        'status': 200,
-                        'potential_listing': True
-                    })
-        
-        # Passive plugin detection từ HTML
-        passive_plugins = self._detect_plugins_from_html(base_url)
-        detected_plugins.extend(passive_plugins)
-        
-        # Remove duplicates
-        unique_plugins = []
-        seen = set()
-        for plugin in detected_plugins:
-            key = plugin['name']
-            if key not in seen:
-                seen.add(key)
-                unique_plugins.append(plugin)
-        
-        unique_themes = []
-        seen = set()
-        for theme in detected_themes:
-            key = theme['name']
-            if key not in seen:
-                seen.add(key)
-                unique_themes.append(theme)
-        
-        return {
-            'exposed_files': exposed_files,
-            'directory_listing': directory_listings,
-            'detected_plugins': unique_plugins,
-            'detected_themes': unique_themes,
-            'paths_checked': len(path_results),
-            'paths_found': len(exposed_files) + len(directory_listings)
-        }
+            if 'cloudflare' in headers_str or 'cf-ray' in headers_str:
+                self.results['security_indicators']['waf_detected'] = 'Cloudflare'
+                self.results['security_indicators']['waf_type'] = 'CDN/WAF'
+            elif 'wordfence' in headers_str:
+                self.results['security_indicators']['waf_detected'] = 'Wordfence'
+                self.results['security_indicators']['waf_type'] = 'Security Plugin'
+            elif 'sucuri' in headers_str:
+                self.results['security_indicators']['waf_detected'] = 'Sucuri'
+                self.results['security_indicators']['waf_type'] = 'Cloud WAF'
+            elif 'akamai' in server_str:
+                self.results['security_indicators']['waf_detected'] = 'Akamai'
+                self.results['security_indicators']['waf_type'] = 'CDN'
+            elif 'imperva' in headers_str or 'incapsula' in headers_str:
+                self.results['security_indicators']['waf_detected'] = 'Imperva'
+                self.results['security_indicators']['waf_type'] = 'WAF'
     
-    def _detect_plugins_from_html(self, base_url: str) -> List[Dict]:
-        """Phát hiện plugin từ HTML comments và resource paths"""
-        
-        plugins = []
-        
-        resp = self.precise_client.get_request(base_url, allow_redirects=False)
-        if not resp or not resp.text:
-            return plugins
-        
-        html = resp.text.lower()
-        
-        # Tìm trong comments
-        comments = re.findall(r'<!--.*?-->', html, re.DOTALL)
-        for comment in comments:
-            for plugin_name, plugin_info in self.plugin_signatures.items():
-                if plugin_name in comment:
-                    plugins.append({
-                        'name': plugin_name,
-                        'source': 'html_comment',
-                        'confidence': 80
-                    })
-        
-        # Tìm trong script và link tags
-        script_patterns = [
-            r'src=["\'][^"\']*?/plugins/([^/"\']+)/',
-            r'href=["\'][^"\']*?/plugins/([^/"\']+)/'
-        ]
-        
-        for pattern in script_patterns:
-            matches = re.findall(pattern, html, re.IGNORECASE)
-            for match in matches:
-                if match in self.plugin_signatures:
-                    plugins.append({
-                        'name': match,
-                        'source': 'resource_path',
-                        'confidence': 85
-                    })
-        
-        # Tìm version strings
-        version_pattern = r'([a-z0-9-]+)-([0-9.]+)\.(?:js|css)'
-        matches = re.findall(version_pattern, html)
-        for plugin_name, version in matches:
-            if plugin_name in self.plugin_signatures:
-                plugins.append({
-                    'name': plugin_name,
-                    'version': version,
-                    'source': 'version_string',
-                    'confidence': 90
-                })
-        
-        return plugins
-    
-    def _classify_file_type(self, path: str) -> str:
-        """Phân loại file type"""
-        if '.env' in path:
-            return 'environment_config'
-        elif 'config' in path and '.php' in path:
-            return 'php_config'
-        elif '.sql' in path:
-            return 'database_dump'
-        elif 'backup' in path and ('.zip' in path or '.tar' in path):
-            return 'backup_archive'
-        elif 'log' in path:
-            return 'error_log'
-        elif 'phpinfo' in path or 'info.php' in path:
-            return 'php_info'
-        else:
-            return 'other_sensitive'
-    
-    def _check_xmlrpc_enhanced(self, base_url: str) -> Dict:
-        """Kiểm tra XML-RPC nâng cao"""
-        url = urljoin(base_url, '/xmlrpc.php')
-        resp = self.precise_client.head_request(url, allow_redirects=False)
-        
-        result = {
-            'active': False,
-            'status': 0,
-            'methods': [],
-            'pingback_enabled': False,
-            'bruteforce_possible': False
-        }
-        
-        if resp:
-            result['status'] = resp.status_code
-            result['active'] = resp.status_code == 200
-            
-            if resp.status_code == 200:
-                # Test pingback
-                pingback_xml = '''<?xml version="1.0"?>
-                <methodCall>
-                    <methodName>pingback.ping</methodName>
-                    <params>
-                        <param><value><string>http://example.com/target</string></value></param>
-                        <param><value><string>http://example.com/source</string></value></param>
-                    </params>
-                </methodCall>'''
-                
-                resp_pingback = self.precise_client.post_request(
-                    url, 
-                    data=pingback_xml, 
-                    content_type='text/xml'
-                )
-                
-                if resp_pingback and resp_pingback.status_code == 200:
-                    result['pingback_enabled'] = True
-                
-                # Test bruteforce methods
-                brute_xml = '''<?xml version="1.0"?>
-                <methodCall>
-                    <methodName>wp.getUsersBlogs</methodName>
-                    <params>
-                        <param><value><string>admin</string></value></param>
-                        <param><value><string>password123</string></value></param>
-                    </params>
-                </methodCall>'''
-                
-                resp_brute = self.precise_client.post_request(
-                    url,
-                    data=brute_xml,
-                    content_type='text/xml'
-                )
-                
-                if resp_brute and resp_brute.status_code == 200:
-                    # Check if it's a valid XML-RPC response (not a fault)
-                    if 'faultCode' not in resp_brute.text:
-                        result['bruteforce_possible'] = True
-        
-        return result
-    
-    def _check_rest_api_enhanced(self, base_url: str) -> Dict:
-        """Kiểm tra REST API nâng cao"""
-        endpoints_to_check = [
-            '/wp-json/wp/v2/',
-            '/wp-json/wp/v2/users',
-            '/wp-json/wp/v2/posts',
-            '/wp-json/wp/v2/pages',
-            '/wp-json/wp/v2/comments'
-        ]
-        
-        results = {}
-        for endpoint in endpoints_to_check:
-            url = urljoin(base_url, endpoint)
-            resp = self.precise_client.get_request(url, allow_redirects=False)
-            
-            if resp:
-                endpoint_result = {
-                    'active': resp.status_code < 400,
-                    'status': resp.status_code,
-                    'requires_auth': resp.status_code == 401,
-                    'exposes_data': resp.status_code == 200
-                }
-                
-                if resp.status_code == 200:
-                    try:
-                        data = json.loads(resp.text)
-                        if isinstance(data, list):
-                            endpoint_result['item_count'] = len(data)
-                        elif isinstance(data, dict):
-                            endpoint_result['keys'] = list(data.keys())
-                    except:
-                        pass
-                
-                results[endpoint] = endpoint_result
-        
-        # Tổng hợp
-        active_endpoints = [ep for ep, res in results.items() if res['active']]
-        exposing_endpoints = [ep for ep, res in results.items() if res.get('exposes_data', False)]
-        
-        return {
-            'active': len(active_endpoints) > 0,
-            'active_endpoints': active_endpoints,
-            'exposing_endpoints': exposing_endpoints,
-            'detailed_results': results,
-            'users_exposed': '/wp-json/wp/v2/users' in exposing_endpoints,
-            'posts_exposed': '/wp-json/wp/v2/posts' in exposing_endpoints
-        }
-    
-    def _check_user_enumeration_enhanced(self, base_url: str) -> Dict:
-        """Kiểm tra user enumeration nâng cao"""
-        methods = []
-        enumerated_users = []
-        
-        # Method 1: REST API
-        rest_url = urljoin(base_url, '/wp-json/wp/v2/users')
-        resp_rest = self.precise_client.get_request(rest_url, allow_redirects=False)
-        
-        if resp_rest and resp_rest.status_code == 200:
-            methods.append('rest_api')
+    def _assess_vulnerabilities(self):
+        """Đánh giá vulnerabilities tổng thể"""
+        # Kiểm tra PHP version cũ
+        php_ver = self.results['server']['php']
+        if php_ver:
             try:
-                users = json.loads(resp_rest.text)
-                if isinstance(users, list):
-                    enumerated_users = [{'id': u.get('id'), 'name': u.get('name')} for u in users[:10]]
-            except:
-                pass
-        
-        # Method 2: Author pages
-        author_url = urljoin(base_url, '/?author=1')
-        resp_author = self.precise_client.head_request(author_url, allow_redirects=False)
-        
-        if resp_author and resp_author.status_code in [301, 302]:
-            methods.append('author_pages')
-        
-        # Method 3: oEmbed
-        oembed_url = urljoin(base_url, '/wp-json/oembed/1.0/embed?url=' + base_url)
-        resp_oembed = self.precise_client.get_request(oembed_url, allow_redirects=False)
-        
-        if resp_oembed and resp_oembed.status_code == 200:
-            try:
-                data = json.loads(resp_oembed.text)
-                if 'author_name' in data:
-                    methods.append('oembed')
-                    enumerated_users.append({'name': data['author_name'], 'source': 'oembed'})
-            except:
-                pass
-        
-        return {
-            'enumerable': len(methods) > 0,
-            'methods': methods,
-            'user_count': len(enumerated_users),
-            'users': enumerated_users[:5],  # Limit to 5
-            'rest_api_exposed': 'rest_api' in methods
-        }
-    
-    def _check_login_exposed_enhanced(self, base_url: str) -> Dict:
-        """Kiểm tra login page nâng cao"""
-        login_url = urljoin(base_url, '/wp-login.php')
-        
-        result = {
-            'exposed': False,
-            'status': 0,
-            'requires_auth': False,
-            'has_redirect': False,
-            'security_headers': {}
-        }
-        
-        # HEAD request
-        resp = self.precise_client.head_request(login_url, allow_redirects=False)
-        
-        if resp:
-            result['status'] = resp.status_code
-            result['exposed'] = resp.status_code in [200, 302, 401, 403]
-            result['requires_auth'] = resp.status_code == 401
-            result['has_redirect'] = resp.status_code in [301, 302]
-            
-            # Check security headers
-            headers_to_check = ['X-Frame-Options', 'Content-Security-Policy', 
-                              'Strict-Transport-Security', 'X-Content-Type-Options']
-            
-            for header in headers_to_check:
-                if header in resp.headers:
-                    result['security_headers'][header] = resp.headers[header]
-        
-        # GET request để check form
-        if result['exposed'] and not result['requires_auth']:
-            resp_get = self.precise_client.get_request(login_url, allow_redirects=False)
-            if resp_get and resp_get.text:
-                html = resp_get.text.lower()
-                result['has_login_form'] = 'loginform' in html or 'user_login' in html
-                result['has_remember_me'] = 'rememberme' in html
-        
-        return result
-    
-    def _check_upload_directory(self, base_url: str) -> Dict:
-        """Kiểm tra upload directory"""
-        upload_urls = [
-            urljoin(base_url, '/wp-content/uploads/'),
-            urljoin(base_url, '/wp-content/uploads/2024/'),
-            urljoin(base_url, '/uploads/')
-        ]
-        
-        results = []
-        for url in upload_urls:
-            resp = self.precise_client.head_request(url, allow_redirects=False)
-            if resp:
-                results.append({
-                    'url': url,
-                    'status': resp.status_code,
-                    'accessible': resp.status_code in [200, 301, 302, 403]
-                })
-        
-        return {
-            'accessible_uploads': [r for r in results if r['accessible']],
-            'writable_check': len([r for r in results if r['status'] == 200]) > 0
-        }
-
-# ==================== PHASE 4: ENHANCED WEAKNESS CORRELATION ====================
-
-class EnhancedWeaknessCorrelator:
-    """Phase 4: Tìm mối tương quan giữa các weakness - EXPANDED"""
-    
-    CORRELATION_PATTERNS = {
-        'RCE_CHAIN': {
-            'weaknesses': ['xmlrpc_active', 'upload_writable', 'directory_listing', 
-                          'plugin_exposed', 'old_plugin_version', 'file_upload_allowed'],
-            'description': 'Chain có thể dẫn đến Remote Code Execution',
-            'multiplier': 2.8,
-            'scenario': 'RCE'
-        },
-        'BRUTEFORCE_VECTOR': {
-            'weaknesses': ['xmlrpc_active', 'user_enumeration', 'login_exposed',
-                          'no_login_captcha', 'no_rate_limit', 'weak_password_policy'],
-            'description': 'Chain có thể brute-force credentials',
-            'multiplier': 2.3,
-            'scenario': 'BRUTEFORCE'
-        },
-        'DATA_EXFIL': {
-            'weaknesses': ['config_exposed', 'backup_exposed', 'directory_listing',
-                          'rest_api_exposed', 'database_exposed', 'log_exposed'],
-            'description': 'Chain có thể dẫn đến data exfiltration',
-            'multiplier': 2.1,
-            'scenario': 'DATA_EXFILTRATION'
-        },
-        'PLUGIN_EXPLOIT': {
-            'weaknesses': ['plugin_exposed', 'old_plugin_version', 'no_waf',
-                          'xmlrpc_active', 'upload_writable'],
-            'description': 'Vulnerable plugin với exploit path',
-            'multiplier': 2.5,
-            'scenario': 'PLUGIN_EXPLOIT'
-        },
-        'GOV_SPECIAL': {
-            'weaknesses': ['http_only', 'old_wp_version', 'gov_domain',
-                          'config_exposed', 'no_https_redirect'],
-            'description': 'Government/edu sites với config đặc biệt',
-            'multiplier': 2.4,
-            'scenario': 'GOV_SPECIAL'
-        },
-        'AUTH_BYPASS': {
-            'weaknesses': ['rest_api_exposed', 'no_auth_required', 'user_enumeration',
-                          'xmlrpc_active', 'weak_cors'],
-            'description': 'Potential authentication bypass vectors',
-            'multiplier': 2.2,
-            'scenario': 'AUTH_BYPASS'
-        }
-    }
-    
-    def analyze_correlations(self, surface_results: Dict, wp_detection: Dict) -> Dict[str, Any]:
-        """Phân tích correlation giữa các weakness - ENHANCED"""
-        
-        weakness_flags = set()
-        
-        # 1. Từ critical surface
-        critical = surface_results.get('critical_surface', {})
-        passive = surface_results.get('passive_surface', {})
-        
-        if critical.get('xmlrpc', {}).get('active'):
-            weakness_flags.add('xmlrpc_active')
-            if critical['xmlrpc'].get('pingback_enabled'):
-                weakness_flags.add('pingback_enabled')
-            if critical['xmlrpc'].get('bruteforce_possible'):
-                weakness_flags.add('xmlrpc_bruteforce')
-        
-        if critical.get('user_enumeration', {}).get('enumerable'):
-            weakness_flags.add('user_enumeration')
-            if critical['user_enumeration'].get('rest_api_exposed'):
-                weakness_flags.add('rest_user_enumeration')
-        
-        if critical.get('login_exposed', {}).get('exposed'):
-            weakness_flags.add('login_exposed')
-            if not critical['login_exposed'].get('requires_auth'):
-                weakness_flags.add('login_public')
-            if not critical['login_exposed'].get('security_headers'):
-                weakness_flags.add('no_login_security_headers')
-        
-        rest_api = critical.get('rest_api', {})
-        if rest_api.get('active'):
-            weakness_flags.add('rest_api_exposed')
-            if rest_api.get('users_exposed'):
-                weakness_flags.add('rest_users_exposed')
-            if rest_api.get('posts_exposed'):
-                weakness_flags.add('rest_posts_exposed')
-        
-        # 2. Từ passive surface
-        for file in passive.get('exposed_files', []):
-            file_type = file.get('type', '')
-            if 'config' in file_type or '.env' in file['path']:
-                weakness_flags.add('config_exposed')
-            if 'database' in file_type or 'sql' in file['path']:
-                weakness_flags.add('database_exposed')
-            if 'backup' in file_type:
-                weakness_flags.add('backup_exposed')
-            if 'error_log' in file_type:
-                weakness_flags.add('log_exposed')
-            if 'php_info' in file_type:
-                weakness_flags.add('phpinfo_exposed')
-        
-        if passive.get('directory_listing'):
-            weakness_flags.add('directory_listing')
-        
-        # Plugin analysis
-        plugins = passive.get('detected_plugins', [])
-        if plugins:
-            weakness_flags.add('plugin_exposed')
-            # Check for old/known vulnerable plugins
-            vulnerable_plugins = ['contact-form-7', 'elementor', 'revslider']
-            for plugin in plugins:
-                if plugin['name'] in vulnerable_plugins:
-                    weakness_flags.add('old_plugin_version')
-                    break
-        
-        # Upload directory check
-        upload_dir = critical.get('upload_dir', {})
-        if upload_dir.get('writable_check'):
-            weakness_flags.add('upload_writable')
-        
-        # 3. Từ domain characteristics
-        normalized_url = wp_detection.get('base_url', '')
-        if normalized_url:
-            if normalized_url.startswith('http://'):
-                weakness_flags.add('http_only')
-            if '.gov.' in normalized_url or '.edu.' in normalized_url or '.ac.' in normalized_url:
-                weakness_flags.add('gov_domain')
-        
-        # 4. Từ WP detection confidence
-        if wp_detection.get('confidence', 0) < 70:
-            weakness_flags.add('low_wp_confidence')
-        
-        # Tìm correlation patterns
-        detected_patterns = []
-        total_multiplier = 1.0
-        
-        for pattern_name, pattern_info in self.CORRELATION_PATTERNS.items():
-            required_weaknesses = pattern_info['weaknesses']
-            found_weaknesses = [w for w in required_weaknesses if w in weakness_flags]
-            found_count = len(found_weaknesses)
-            
-            # Nếu tìm thấy ít nhất 2 weaknesses trong pattern
-            if found_count >= 2:
-                pattern_score = found_count / len(required_weaknesses)
-                
-                # Tính risk weight dựa trên số weaknesses tìm thấy
-                risk_weight = 1.0 + (found_count - 2) * 0.2
-                
-                detected_patterns.append({
-                    'pattern': pattern_name,
-                    'description': pattern_info['description'],
-                    'match_score': round(pattern_score, 2),
-                    'weakness_match': found_count,
-                    'total_weaknesses': len(required_weaknesses),
-                    'multiplier': pattern_info['multiplier'],
-                    'scenario': pattern_info['scenario'],
-                    'matched_weaknesses': found_weaknesses,
-                    'risk_weight': round(risk_weight, 2)
-                })
-                
-                total_multiplier *= (pattern_info['multiplier'] * risk_weight)
-        
-        # Tính correlation score tổng hợp
-        correlation_score = len(detected_patterns) * 20
-        
-        # Thêm bonus cho nhiều patterns
-        if len(detected_patterns) >= 2:
-            correlation_score += 15
-        if len(detected_patterns) >= 3:
-            correlation_score += 20
-        
-        # Cap at 100
-        correlation_score = min(100, correlation_score)
-        
-        return {
-            'weakness_flags': sorted(list(weakness_flags)),
-            'weakness_count': len(weakness_flags),
-            'detected_patterns': detected_patterns,
-            'pattern_count': len(detected_patterns),
-            'correlation_multiplier': round(total_multiplier, 2),
-            'correlation_score': correlation_score,
-            'critical_weaknesses': [w for w in weakness_flags if w in [
-                'config_exposed', 'database_exposed', 'xmlrpc_bruteforce',
-                'upload_writable', 'phpinfo_exposed'
-            ]]
-        }
-
-# ==================== PHASE 5: ENHANCED SCENARIO-BASED RISK SCORING ====================
-
-class EnhancedRiskCalculator:
-    """Phase 5: Tính risk dựa trên kịch bản thực tế - EXPANDED"""
-    
-    SCENARIOS = {
-        'RCE': {
-            'name': 'Remote Code Execution',
-            'indicators': ['xmlrpc_active', 'upload_writable', 'directory_listing',
-                          'plugin_exposed', 'old_plugin_version', 'file_upload_allowed',
-                          'config_exposed', 'phpinfo_exposed'],
-            'base_risk': 95,
-            'weight': 1.6,
-            'impact': 'critical',
-            'exploitability': 'high'
-        },
-        'BRUTEFORCE': {
-            'name': 'Authentication Brute-force',
-            'indicators': ['xmlrpc_active', 'user_enumeration', 'login_exposed',
-                          'no_login_captcha', 'no_rate_limit', 'xmlrpc_bruteforce',
-                          'login_public', 'rest_user_enumeration'],
-            'base_risk': 75,
-            'weight': 1.4,
-            'impact': 'high',
-            'exploitability': 'very_high'
-        },
-        'DATA_EXFILTRATION': {
-            'name': 'Data Exfiltration',
-            'indicators': ['config_exposed', 'backup_exposed', 'directory_listing',
-                          'rest_api_exposed', 'database_exposed', 'log_exposed',
-                          'rest_users_exposed', 'rest_posts_exposed'],
-            'base_risk': 70,
-            'weight': 1.3,
-            'impact': 'high',
-            'exploitability': 'medium'
-        },
-        'PLUGIN_EXPLOIT': {
-            'name': 'Vulnerable Plugin Exploit',
-            'indicators': ['plugin_exposed', 'old_plugin_version', 'no_waf',
-                          'xmlrpc_active', 'upload_writable', 'directory_listing',
-                          'http_only', 'low_wp_confidence'],
-            'base_risk': 85,
-            'weight': 1.5,
-            'impact': 'high',
-            'exploitability': 'high'
-        },
-        'GOV_SPECIAL': {
-            'name': 'Government/Edu Special Case',
-            'indicators': ['http_only', 'old_wp_version', 'gov_domain',
-                          'config_exposed', 'no_https_redirect', 'no_security_headers',
-                          'login_public', 'directory_listing'],
-            'base_risk': 80,
-            'weight': 1.4,
-            'impact': 'very_high',  # High impact due to sensitive data
-            'exploitability': 'medium'
-        },
-        'AUTH_BYPASS': {
-            'name': 'Authentication Bypass',
-            'indicators': ['rest_api_exposed', 'no_auth_required', 'user_enumeration',
-                          'xmlrpc_active', 'weak_cors', 'login_public',
-                          'rest_users_exposed', 'no_login_security_headers'],
-            'base_risk': 90,
-            'weight': 1.5,
-            'impact': 'critical',
-            'exploitability': 'medium'
-        }
-    }
-    
-    def calculate_scenario_risk(self, weakness_flags: List[str], 
-                               correlation_result: Dict,
-                               wp_detection: Dict) -> Dict[str, Any]:
-        """Tính risk dựa trên kịch bản - ENHANCED"""
-        
-        scenario_risks = []
-        max_scenario_risk = 0
-        worst_scenario = None
-        worst_scenario_details = None
-        
-        for scenario_id, scenario_info in self.SCENARIOS.items():
-            # Đếm indicators có mặt
-            present_indicators = [ind for ind in scenario_info['indicators'] if ind in weakness_flags]
-            indicator_score = len(present_indicators) / len(scenario_info['indicators'])
-            
-            # Tính base risk
-            scenario_risk = scenario_info['base_risk'] * indicator_score * scenario_info['weight']
-            
-            # Apply correlation multiplier
-            scenario_risk *= correlation_result.get('correlation_multiplier', 1.0)
-            
-            # Apply WP confidence factor
-            wp_confidence = wp_detection.get('confidence', 50)
-            confidence_factor = wp_confidence / 100.0
-            scenario_risk *= confidence_factor
-            
-            # Thêm bonus cho critical weaknesses
-            critical_bonus = 0
-            critical_indicators = ['config_exposed', 'database_exposed', 'phpinfo_exposed',
-                                 'xmlrpc_bruteforce', 'upload_writable']
-            critical_present = [ind for ind in critical_indicators if ind in present_indicators]
-            if critical_present:
-                critical_bonus = len(critical_present) * 5
-            
-            scenario_risk += critical_bonus
-            
-            # Cap at 100
-            scenario_risk = min(100, scenario_risk)
-            
-            # Phân loại mức độ risk
-            risk_level = 'low'
-            if scenario_risk > 70:
-                risk_level = 'critical'
-            elif scenario_risk > 50:
-                risk_level = 'high'
-            elif scenario_risk > 30:
-                risk_level = 'medium'
-            
-            scenario_data = {
-                'scenario': scenario_id,
-                'name': scenario_info['name'],
-                'risk_score': round(scenario_risk, 1),
-                'risk_level': risk_level,
-                'indicator_score': round(indicator_score * 100, 1),
-                'indicators_present': len(present_indicators),
-                'total_indicators': len(scenario_info['indicators']),
-                'present_indicators': present_indicators,
-                'impact': scenario_info['impact'],
-                'exploitability': scenario_info['exploitability']
-            }
-            
-            scenario_risks.append(scenario_data)
-            
-            # Cập nhật worst case
-            if scenario_risk > max_scenario_risk:
-                max_scenario_risk = scenario_risk
-                worst_scenario = scenario_id
-                worst_scenario_details = scenario_data
-        
-        # Tổng risk dựa trên worst case scenario + pattern count
-        overall_risk = max_scenario_risk
-        
-        # Thêm bonus cho multiple scenarios
-        high_risk_scenarios = len([s for s in scenario_risks if s['risk_score'] > 50])
-        if high_risk_scenarios >= 2:
-            overall_risk += 5
-        if high_risk_scenarios >= 3:
-            overall_risk += 10
-        
-        # Thêm bonus cho pattern count
-        pattern_count = correlation_result.get('pattern_count', 0)
-        overall_risk += pattern_count * 3
-        
-        # Cap at 100
-        overall_risk = min(100, overall_risk)
-        
-        # Xác định risk level tổng thể
-        overall_risk_level = 'low'
-        if overall_risk > 80:
-            overall_risk_level = 'critical'
-        elif overall_risk > 60:
-            overall_risk_level = 'high'
-        elif overall_risk > 40:
-            overall_risk_level = 'medium'
-        
-        return {
-            'overall_risk': round(overall_risk, 1),
-            'overall_risk_level': overall_risk_level,
-            'worst_scenario': worst_scenario,
-            'worst_scenario_risk': round(max_scenario_risk, 1) if max_scenario_risk else 0,
-            'worst_scenario_details': worst_scenario_details,
-            'scenario_breakdown': scenario_risks,
-            'high_risk_scenario_count': len([s for s in scenario_risks if s['risk_score'] > 50]),
-            'medium_risk_scenario_count': len([s for s in scenario_risks if 30 <= s['risk_score'] <= 50]),
-            'total_scenarios_evaluated': len(scenario_risks)
-        }
-
-# ==================== PHASE 6: ENHANCED PRIORITIZATION & OUTPUT ====================
-
-class EnhancedPrioritizationEngine:
-    """Phase 6: Sắp xếp ưu tiên và output - ENHANCED"""
-    
-    @staticmethod
-    def prioritize_findings(surface_results: Dict, risk_analysis: Dict, 
-                           max_findings: int = 15) -> List[Dict]:
-        """Sắp xếp findings theo mức độ nguy hiểm - ENHANCED"""
-        
-        prioritized = []
-        
-        # Critical findings từ surface mapping
-        critical = surface_results.get('critical_surface', {})
-        passive = surface_results.get('passive_surface', {})
-        
-        # Risk scores từ analysis
-        risk_score = risk_analysis.get('overall_risk', 0)
-        worst_scenario = risk_analysis.get('worst_scenario', '')
-        
-        # 1. CRITICAL: Exposed config files
-        for file in passive.get('exposed_files', []):
-            if file.get('risk') == 'critical' or file.get('type') in ['environment_config', 'php_config']:
-                prioritized.append({
-                    'type': 'EXPOSED_CONFIG',
-                    'category': 'CRITICAL',
-                    'risk': 'critical',
-                    'details': f"Exposed sensitive file: {file['path']}",
-                    'priority_score': 100,
-                    'remediation': 'Immediately remove or restrict access'
-                })
-        
-        # 2. CRITICAL: XML-RPC với bruteforce
-        xmlrpc = critical.get('xmlrpc', {})
-        if xmlrpc.get('active') and xmlrpc.get('bruteforce_possible'):
-            prioritized.append({
-                'type': 'XMLRPC_BRUTEFORCE',
-                'category': 'CRITICAL',
-                'risk': 'critical',
-                'details': f"XML-RPC active with bruteforce capability",
-                'priority_score': 98,
-                'remediation': 'Disable XML-RPC or implement rate limiting'
-            })
-        
-        # 3. HIGH: User enumeration với nhiều users
-        user_enum = critical.get('user_enumeration', {})
-        if user_enum.get('enumerable') and user_enum.get('user_count', 0) > 5:
-            prioritized.append({
-                'type': 'USER_ENUMERATION',
-                'category': 'HIGH',
-                'risk': 'high',
-                'details': f"User enumeration possible ({user_enum.get('user_count', 0)} users)",
-                'priority_score': 92,
-                'remediation': 'Disable user enumeration via REST API'
-            })
-        
-        # 4. HIGH: Vulnerable plugins detected
-        plugins = passive.get('detected_plugins', [])
-        vulnerable_plugins = ['contact-form-7', 'revslider', 'elementor']  # Example list
-        for plugin in plugins:
-            if plugin['name'] in vulnerable_plugins:
-                prioritized.append({
-                    'type': 'VULNERABLE_PLUGIN',
-                    'category': 'HIGH',
-                    'risk': 'high',
-                    'details': f"Potentially vulnerable plugin: {plugin['name']}",
-                    'priority_score': 90,
-                    'remediation': 'Update plugin to latest version'
-                })
-        
-        # 5. HIGH: Directory listing
-        if passive.get('directory_listing'):
-            dir_count = len(passive['directory_listing'])
-            prioritized.append({
-                'type': 'DIRECTORY_LISTING',
-                'category': 'HIGH',
-                'risk': 'high',
-                'details': f"Directory listing in {dir_count} locations",
-                'priority_score': 88,
-                'remediation': 'Add Options -Indexes to .htaccess'
-            })
-        
-        # 6. MEDIUM: Login page exposed without auth
-        login = critical.get('login_exposed', {})
-        if login.get('exposed') and not login.get('requires_auth'):
-            prioritized.append({
-                'type': 'LOGIN_PUBLIC',
-                'category': 'MEDIUM',
-                'risk': 'medium',
-                'details': "Login page accessible without authentication",
-                'priority_score': 75,
-                'remediation': 'Implement IP whitelisting or captcha'
-            })
-        
-        # 7. MEDIUM: REST API exposing sensitive data
-        rest_api = critical.get('rest_api', {})
-        if rest_api.get('users_exposed') or rest_api.get('posts_exposed'):
-            exposed_data = []
-            if rest_api.get('users_exposed'):
-                exposed_data.append('users')
-            if rest_api.get('posts_exposed'):
-                exposed_data.append('posts')
-            
-            prioritized.append({
-                'type': 'REST_API_EXPOSED',
-                'category': 'MEDIUM',
-                'risk': 'medium',
-                'details': f"REST API exposing: {', '.join(exposed_data)}",
-                'priority_score': 72,
-                'remediation': 'Implement authentication for sensitive endpoints'
-            })
-        
-        # 8. LOW: HTTP only site
-        if risk_analysis.get('worst_scenario_details', {}).get('present_indicators'):
-            if 'http_only' in risk_analysis['worst_scenario_details']['present_indicators']:
-                prioritized.append({
-                    'type': 'HTTP_ONLY',
-                    'category': 'LOW',
-                    'risk': 'low',
-                    'details': "Site accessible via HTTP only (no HTTPS)",
-                    'priority_score': 60,
-                    'remediation': 'Implement HTTPS redirect'
-                })
-        
-        # 9. Thêm findings dựa trên correlation patterns
-        correlation = risk_analysis.get('worst_scenario_details', {}).get('present_indicators', [])
-        if 'gov_domain' in correlation:
-            prioritized.append({
-                'type': 'GOV_DOMAIN_SPECIAL',
-                'category': 'HIGH',
-                'risk': 'high',
-                'details': "Government/education domain with special considerations",
-                'priority_score': 85,
-                'remediation': 'Apply government security standards'
-            })
-        
-        # Sắp xếp theo priority score
-        prioritized.sort(key=lambda x: x['priority_score'], reverse=True)
-        
-        # Giới hạn số lượng và thêm index
-        for i, item in enumerate(prioritized[:max_findings]):
-            item['id'] = i + 1
-        
-        return prioritized[:max_findings]
-    
-    @staticmethod
-    def generate_outputs(scan_results: List[Dict], output_dir: str = "reports"):
-        """Tạo output files - ENHANCED"""
-        
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # 1. JSON Full Report (Enhanced)
-        json_file = os.path.join(output_dir, f"wp_hunter_enhanced_{timestamp}.json")
-        with open(json_file, 'w', encoding='utf-8') as f:
-            json.dump({
-                'metadata': {
-                    'timestamp': datetime.now().isoformat(),
-                    'total_sites': len(scan_results),
-                    'wp_sites': len([r for r in scan_results if r.get('wp_detection', {}).get('is_wordpress')]),
-                    'engine': 'WP Hunter Enhanced - Multi-Phase Architecture',
-                    'version': '3.0',
-                    'principles': [
-                        'Phase 0: Passive source enrichment',
-                        'Phase 1: Always try HTTP + HTTPS',
-                        'Phase 2: ≥ 2 behavioral signals for WP detection',
-                        'Phase 3: Plugin/theme fingerprinting',
-                        'Phase 4: Advanced correlation patterns',
-                        'Phase 5: Scenario-based risk with impact/exploitability',
-                        'Phase 6: Enhanced prioritization'
-                    ]
-                },
-                'results': scan_results
-            }, f, indent=2, ensure_ascii=False)
-        
-        # 2. CSV Summary (Enhanced)
-        csv_file = os.path.join(output_dir, f"wp_hunter_summary_enhanced_{timestamp}.csv")
-        with open(csv_file, 'w', encoding='utf-8') as f:
-            # Enhanced header
-            f.write("URL,Is_WP,WP_Confidence,WP_Vectors,Overall_Risk,Risk_Level,Worst_Scenario,"
-                   "XMLRPC_Active,User_Enum,Exposed_Files,Dir_Listing,Plugins_Detected,"
-                   "Critical_Findings,Correlation_Score\n")
-            
-            for result in scan_results:
-                if result.get('wp_detection', {}).get('is_wordpress'):
-                    url = result.get('normalized_url', '')
-                    wp_conf = result.get('wp_detection', {}).get('confidence', 0)
-                    wp_vectors = result.get('wp_detection', {}).get('vector_count', 0)
-                    overall_risk = result.get('risk_analysis', {}).get('overall_risk', 0)
-                    risk_level = result.get('risk_analysis', {}).get('overall_risk_level', 'low')
-                    worst_scenario = result.get('risk_analysis', {}).get('worst_scenario', 'NONE')
-                    
-                    # Critical findings
-                    surface = result.get('surface_mapping', {})
-                    critical = surface.get('critical_surface', {})
-                    passive = surface.get('passive_surface', {})
-                    
-                    xmlrpc_active = 1 if critical.get('xmlrpc', {}).get('active') else 0
-                    user_enum = 1 if critical.get('user_enumeration', {}).get('enumerable') else 0
-                    exposed_files = len(passive.get('exposed_files', []))
-                    dir_listing = 1 if passive.get('directory_listing') else 0
-                    plugins_detected = len(passive.get('detected_plugins', []))
-                    critical_findings = len([f for f in result.get('prioritized_findings', []) 
-                                           if f.get('risk') == 'critical'])
-                    correlation_score = result.get('correlation_analysis', {}).get('correlation_score', 0)
-                    
-                    f.write(f'"{url}",TRUE,{wp_conf},{wp_vectors},{overall_risk},{risk_level},'
-                           f'{worst_scenario},{xmlrpc_active},{user_enum},{exposed_files},'
-                           f'{dir_listing},{plugins_detected},{critical_findings},{correlation_score}\n')
-        
-        # 3. Executive Summary (HTML)
-        html_file = os.path.join(output_dir, f"wp_hunter_executive_{timestamp}.html")
-        with open(html_file, 'w', encoding='utf-8') as f:
-            f.write("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>WP Hunter Enhanced Scan Report</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; }
-                    h1 { color: #333; }
-                    .summary { background: #f5f5f5; padding: 20px; border-radius: 5px; }
-                    .critical { color: #d32f2f; font-weight: bold; }
-                    .high { color: #f57c00; }
-                    .medium { color: #fbc02d; }
-                    .low { color: #388e3c; }
-                    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                    th { background-color: #f2f2f2; }
-                    tr:nth-child(even) { background-color: #f9f9f9; }
-                </style>
-            </head>
-            <body>
-                <h1>WP Hunter Enhanced - Executive Summary</h1>
-                <div class="summary">
-                    <h2>Scan Overview</h2>
-                    <p><strong>Timestamp:</strong> """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
-                    <p><strong>Total Sites Scanned:</strong> """ + str(len(scan_results)) + """</p>
-            """)
-            
-            wp_sites = [r for r in scan_results if r.get('wp_detection', {}).get('is_wordpress')]
-            f.write(f'<p><strong>WordPress Sites Found:</strong> {len(wp_sites)}</p>')
-            
-            if wp_sites:
-                # Risk distribution
-                critical = len([r for r in wp_sites if r.get('risk_analysis', {}).get('overall_risk', 0) > 80])
-                high = len([r for r in wp_sites if 60 < r.get('risk_analysis', {}).get('overall_risk', 0) <= 80])
-                medium = len([r for r in wp_sites if 40 < r.get('risk_analysis', {}).get('overall_risk', 0) <= 60])
-                low = len([r for r in wp_sites if r.get('risk_analysis', {}).get('overall_risk', 0) <= 40])
-                
-                f.write(f"""
-                <h2>Risk Distribution</h2>
-                <p><span class="critical">Critical (>80):</span> {critical} sites</p>
-                <p><span class="high">High (60-80):</span> {high} sites</p>
-                <p><span class="medium">Medium (40-60):</span> {medium} sites</p>
-                <p><span class="low">Low (≤40):</span> {low} sites</p>
-                """)
-                
-                # Top 10 most vulnerable
-                wp_sites.sort(key=lambda x: x.get('risk_analysis', {}).get('overall_risk', 0), reverse=True)
-                
-                f.write("""
-                <h2>Top 10 Most Vulnerable Sites</h2>
-                <table>
-                    <tr>
-                        <th>Rank</th>
-                        <th>URL</th>
-                        <th>Risk Score</th>
-                        <th>Risk Level</th>
-                        <th>Worst Scenario</th>
-                        <th>Critical Findings</th>
-                    </tr>
-                """)
-                
-                for i, site in enumerate(wp_sites[:10], 1):
-                    url = site.get('normalized_url', '')[:50]
-                    risk = site.get('risk_analysis', {}).get('overall_risk', 0)
-                    risk_level = site.get('risk_analysis', {}).get('overall_risk_level', 'low')
-                    scenario = site.get('risk_analysis', {}).get('worst_scenario', '')
-                    crit_findings = len([f for f in site.get('prioritized_findings', []) 
-                                       if f.get('risk') == 'critical'])
-                    
-                    risk_class = risk_level.lower()
-                    f.write(f"""
-                    <tr>
-                        <td>{i}</td>
-                        <td>{url}</td>
-                        <td class="{risk_class}">{risk:.1f}</td>
-                        <td class="{risk_class}">{risk_level}</td>
-                        <td>{scenario}</td>
-                        <td>{crit_findings}</td>
-                    </tr>
-                    """)
-                
-                f.write("</table>")
-            
-            f.write("""
-                </div>
-                <p><em>Generated by WP Hunter Enhanced v3.0</em></p>
-            </body>
-            </html>
-            """)
-        
-        # 4. Top Risky Sites (Enhanced)
-        risky_sites = [r for r in scan_results if r.get('wp_detection', {}).get('is_wordpress')]
-        risky_sites.sort(key=lambda x: x.get('risk_analysis', {}).get('overall_risk', 0), reverse=True)
-        
-        top_risky_file = os.path.join(output_dir, f"wp_hunter_top_risky_{timestamp}.txt")
-        with open(top_risky_file, 'w', encoding='utf-8') as f:
-            f.write("=" * 80 + "\n")
-            f.write("TOP 15 MOST RISKY WORDPRESS SITES\n")
-            f.write("=" * 80 + "\n\n")
-            
-            for i, site in enumerate(risky_sites[:15], 1):
-                f.write(f"{i:2d}. {site.get('normalized_url', '')}\n")
-                f.write(f"    Risk Score: {site.get('risk_analysis', {}).get('overall_risk', 0):.1f} ")
-                f.write(f"({site.get('risk_analysis', {}).get('overall_risk_level', 'low')})\n")
-                f.write(f"    Worst Scenario: {site.get('risk_analysis', {}).get('worst_scenario', 'NONE')}\n")
-                f.write(f"    WP Detection Vectors: {site.get('wp_detection', {}).get('vector_count', 0)}\n")
-                f.write(f"    Confidence: {site.get('wp_detection', {}).get('confidence', 0)}%\n")
-                
-                # Top 3 findings
-                findings = site.get('prioritized_findings', [])[:3]
-                if findings:
-                    f.write(f"    Top Findings:\n")
-                    for j, finding in enumerate(findings, 1):
-                        f.write(f"      {j}. {finding.get('details', '')}\n")
-                
-                # Weakness count
-                weaknesses = site.get('correlation_analysis', {}).get('weakness_count', 0)
-                f.write(f"    Weaknesses Found: {weaknesses}\n")
-                
-                f.write("\n")
-        
-        return {
-            'json_full': json_file,
-            'csv_summary': csv_file,
-            'html_executive': html_file,
-            'top_risky': top_risky_file
-        }
-
-# ==================== MAIN ORCHESTRATOR ENHANCED ====================
-
-class WPHunterEnhancedOrchestrator:
-    """Orchestrator chính điều phối tất cả phases - ENHANCED"""
-    
-    def __init__(self, use_passive_sources: bool = True):
-        self.use_passive_sources = use_passive_sources
-        self.passive_enricher = PassiveSourceEnricher() if use_passive_sources else None
-        self.liveness = LivenessChecker()
-        self.wp_detector = EnhancedWPDetector()
-        self.surface_mapper = EnhancedSurfaceMapper()
-        self.correlator = EnhancedWeaknessCorrelator()
-        self.risk_calculator = EnhancedRiskCalculator()
-        self.prioritizer = EnhancedPrioritizationEngine()
-        
-        self.results = []
-        self.lock = Lock()
-        
-        # Enhanced statistics
-        self.stats = {
-            'total_targets': 0,
-            'dead_targets': 0,
-            'alive_targets': 0,
-            'non_wp': 0,
-            'wp_targets': 0,
-            'clean_wp': 0,
-            'vulnerable': 0,
-            'high_risk': 0,
-            'critical_findings': 0
-        }
-    
-    def load_targets(self, file_path: str, generate_dirty: bool = False) -> Set[str]:
-        """Tải targets từ file - Với option tạo dirty targets"""
-        
-        targets = set()
-        
-        if generate_dirty and self.use_passive_sources:
-            print(f"{C}[*] Generating dirty targets from passive sources...{W}")
-            dirty_targets = self.passive_enricher.generate_dirty_targets()
-            targets.update(dirty_targets)
-            print(f"{G}[+] Added {len(dirty_targets)} passive targets{W}")
-        
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-                    
-                    # Regex mạnh để lấy domain
-                    domain_match = re.search(
-                        r'([a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,})',
-                        line
+                major = int(php_ver.split('.')[0])
+                if major < 8:
+                    self.results['vulnerability_indicators']['outdated_php'] = True
+                    self.results['vulnerability_indicators']['potential_issues'].append(
+                        f"outdated_php:{php_ver}"
                     )
-                    if domain_match:
-                        domain = domain_match.group(1).lower()
-                        # Basic validation
-                        if len(domain) > 4 and '.' in domain and ' ' not in domain:
-                            targets.add(domain)
+            except:
+                pass
         
-        self.stats['total_targets'] = len(targets)
-        return targets
+        # Kiểm tra số lượng plugin lớn
+        if len(self.results['plugins']) > 30:
+            self.results['vulnerability_indicators']['potential_issues'].append(
+                "many_plugins"
+            )
+        
+        # Kiểm tra nếu có xmlrpc và directory listing cùng lúc
+        if (self.results['security_indicators']['xmlrpc_enabled'] and 
+            self.results['security_indicators']['directory_listing']):
+            self.results['vulnerability_indicators']['potential_issues'].append(
+                "xmlrpc_with_directory_listing"
+            )
     
-    def process_single_site(self, domain: str) -> Optional[Dict]:
-        """Xử lý một site qua tất cả phases - CHỈ SHOW KHI CÓ VULN"""
-        
-        # KHÔNG print [Phase 1] Checking ở đây - sẽ làm nhiễu terminal
-        
-        # Phase 1: Liveness & Normalization
-        liveness_result = self.liveness.check_liveness(domain)
-        
-        if not liveness_result['alive']:
-            with self.lock:
-                self.stats['total_targets'] += 1
-                self.stats['dead_targets'] += 1
-            return None
-        
-        with self.lock:
-            self.stats['alive_targets'] += 1
-        
-        normalized_url = self.liveness.normalize_entity(liveness_result)
-        
-        # Phase 2: Enhanced WordPress Detection
-        wp_result = self.wp_detector.detect_wordpress(normalized_url)
-        
-        # LUẬT: ≥ 2 signals mới kết luận WP
-        if not wp_result['is_wordpress']:
-            with self.lock:
-                self.stats['non_wp'] += 1
-            return None
-        
-        with self.lock:
-            self.stats['wp_targets'] += 1
-        
-        # Phase 3: Enhanced Surface Mapping
-        critical_surface = self.surface_mapper.map_critical_surface(normalized_url)
-        passive_surface = self.surface_mapper.map_passive_surface(normalized_url)
-        
-        surface_results = {
-            'critical_surface': critical_surface,
-            'passive_surface': passive_surface
-        }
-        
-        # Phase 4: Enhanced Weakness Correlation
-        correlation = self.correlator.analyze_correlations(surface_results, wp_result)
-        
-        # Phase 5: Enhanced Scenario-based Risk
-        risk_analysis = self.risk_calculator.calculate_scenario_risk(
-            correlation['weakness_flags'],
-            correlation,
-            wp_result
-        )
-        
-        # Phase 6: Enhanced Prioritization
-        prioritized_findings = self.prioritizer.prioritize_findings(
-            surface_results, 
-            risk_analysis
-        )
-        
-        # Cập nhật statistics
-        with self.lock:
-            if risk_analysis['overall_risk'] > 70:
-                self.stats['high_risk'] += 1
-            self.stats['critical_findings'] += len([f for f in risk_analysis.get('scenario_breakdown', []) 
-                                                   if f.get('risk_level') == 'critical'])
-        
-        # CHỈ HIỂN THỊ NẾU CÓ FINDING HOẶC HIGH RISK
-        has_findings = len(prioritized_findings) > 0
-        is_high_risk = risk_analysis['overall_risk'] > 40
-        
-        if not (has_findings or is_high_risk):
-            with self.lock:
-                self.stats['clean_wp'] += 1
-            return None
-        
-        # Compile final result
-        result = {
-            'original_domain': domain,
-            'normalized_url': normalized_url,
-            'liveness_check': liveness_result,
-            'wp_detection': wp_result,
-            'surface_mapping': surface_results,
-            'correlation_analysis': correlation,
-            'risk_analysis': risk_analysis,
-            'prioritized_findings': prioritized_findings,
-            'timestamp': datetime.now().isoformat(),
-            'scan_id': hashlib.md5(f"{domain}{datetime.now().isoformat()}".encode()).hexdigest()[:8]
-        }
-        
-        # CHỈ HIỂN THỊ SUMMARY CHO DOMAIN CÓ VULN
-        self._display_vuln_summary(result)
-        
-        return result
-    
-
-    def _display_vuln_summary(self, result: Dict):
-        """Chỉ hiển thị summary cho domain có vulnerability"""
-        
-        url = result['normalized_url'][:60]
-        risk = result['risk_analysis']['overall_risk']
-        risk_level = result['risk_analysis']['overall_risk_level']
-        worst_scenario = result['risk_analysis']['worst_scenario']
-        wp_vectors = result['wp_detection']['vector_count']
-        
-        # Màu sắc và symbol dựa trên risk level
-        if risk_level == 'critical':
-            color = R
-            symbol = "🔥"
-            risk_text = "CRITICAL"
-        elif risk_level == 'high':
-            color = Y
-            symbol = "⚠️"
-            risk_text = "HIGH"
-        elif risk_level == 'medium':
-            color = M
-            symbol = "🔶"
-            risk_text = "MEDIUM"
-        else:
-            color = G
-            symbol = "✅"
-            risk_text = "LOW"
-        
-        # HIỂN THỊ 1 DÒNG DUY NHẤT (không có newline ở đầu)
-        print(f"\r{color}{symbol} {risk_text}: {url} | Risk: {risk:.1f} | Scenario: {worst_scenario} | Vectors: {wp_vectors}{W}")
-        
-        # Hiển thị top finding ngay bên dưới (nếu có)
-        if result['prioritized_findings']:
-            top_finding = result['prioritized_findings'][0]
-            print(f"   {color}Top: {top_finding.get('details', '')[:70]}...{W}")
-        
-        print()  # Newline để phân tách với domain tiếp theo
-
-
-    
-    def _display_enhanced_summary(self, result: Dict):
-        """Hiển thị enhanced summary cho một site"""
-        
-        url = result['normalized_url'][:60]
-        risk = result['risk_analysis']['overall_risk']
-        risk_level = result['risk_analysis']['overall_risk_level']
-        worst_scenario = result['risk_analysis']['worst_scenario']
-        wp_vectors = result['wp_detection']['vector_count']
-        wp_confidence = result['wp_detection']['confidence']
-        
-        # Màu sắc và symbol dựa trên risk level
-        if risk_level == 'critical':
-            color = R
-            symbol = "🔥"
-            risk_text = "CRITICAL"
-        elif risk_level == 'high':
-            color = Y
-            symbol = "⚠️"
-            risk_text = "HIGH"
-        elif risk_level == 'medium':
-            color = M
-            symbol = "🔶"
-            risk_text = "MEDIUM"
-        else:
-            color = G
-            symbol = "✅"
-            risk_text = "LOW"
-        
-        print(f"\n{symbol} {color}{BOLD}{risk_text}: {url}{W}")
-        print(f"   {color}Overall Risk: {risk:.1f} ({risk_level}){W}")
-        print(f"   {color}Worst Scenario: {worst_scenario}{W}")
-        print(f"   {color}WP Confidence: {wp_confidence}% ({wp_vectors} vectors){W}")
-        
-        # Hiển thị top 3 findings
-        if result['prioritized_findings'][:3]:
-            print(f"   {color}Top Findings:{W}")
-            for i, finding in enumerate(result['prioritized_findings'][:3], 1):
-                risk_color = R if finding.get('risk') == 'critical' else Y if finding.get('risk') == 'high' else M
-                print(f"     {i}. {risk_color}{finding.get('details', '')[:70]}{W}")
-        
-        # Weakness count
-        weakness_count = result['correlation_analysis'].get('weakness_count', 0)
-        if weakness_count > 0:
-            print(f"   {color}Weaknesses: {weakness_count}{W}")
-        
-        # Detected plugins
-        plugins = result['surface_mapping'].get('passive_surface', {}).get('detected_plugins', [])
-        if plugins:
-            plugin_names = [p['name'] for p in plugins[:3]]
-            print(f"   {color}Plugins: {', '.join(plugin_names)}{W}")
-    
-    def scan_targets(self, targets_file: str, max_targets: int = 100, 
-                    generate_dirty: bool = False):
-        """Scan nhiều targets với enhanced features"""
-        
-        # Load targets - với option dirty generation
-        targets = self.load_targets(targets_file, generate_dirty)
-        if not targets:
-            print(f"{R}[!] No targets found in {targets_file}{W}")
-            return
-        
-        targets = list(targets)[:max_targets]
-        print(f"{G}[+] Loaded {len(targets)} targets (with passive enrichment: {generate_dirty}){W}")
-        
-        # Display scan configuration
-        print(f"\n{C}[⚙️] SCAN CONFIGURATION:{W}")
-        print(f"  Targets: {len(targets)}")
-        print(f"  Threads: {THREADS}")
-        print(f"  Timeout: {REQUEST_TIMEOUT}s")
-        print(f"  Passive Enrichment: {'ENABLED' if generate_dirty else 'DISABLED'}")
-        print(f"  Async Concurrency: {MAX_CONCURRENT_ASYNC}")
-        
-        # Scan với thread pool
-        self._scan_threaded_enhanced(targets)
-        
-        # Generate enhanced reports
-        if self.results:
-            print(f"\n{C}[*] Generating enhanced reports...{W}")
-            output_files = self.prioritizer.generate_outputs(self.results)
-            
-            print(f"\n{G}{BOLD}[✅] ENHANCED SCAN COMPLETED{W}")
-            for file_type, file_path in output_files.items():
-                print(f"{G}[+] {file_type}: {file_path}{W}")
-            
-            # Hiển thị enhanced statistics
-            self._display_enhanced_statistics()
-        else:
-            print(f"{R}[!] No WordPress sites found{W}")
-    
-    def _scan_threaded_enhanced(self, targets: List[str], threads: int = THREADS):
-        """Scan style ShadowStrike - hiển thị từng domain"""
-        
-        print(f"{C}[*] Scanning {len(targets)} targets with {threads} threads{W}")
-        
+    def scan(self):
+        """Thực hiện recon đầy đủ với schema mới"""
         start_time = time.time()
         
-        # Dùng tqdm nhưng custom display
-        pbar = tqdm(total=len(targets), desc="Hunting", unit="site", 
-                    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-                    position=0, leave=True)
+        # Bước 1: Detect base URL
+        base_found = False
+        for test_url in [self.https_url, self.url]:
+            response = self._make_request(test_url)
+            if response and response.status_code < 400:
+                self.base_url = test_url
+                base_found = True
+                break
         
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=threads,
-            thread_name_prefix='wp_hunter'
-        ) as executor:
-            
-            futures = {}
-            
-            for target in targets:
-                future = executor.submit(self.process_single_site, target)
-                futures[future] = target
-                time.sleep(RATE_LIMIT_DELAY)
-            
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    result = future.result(timeout=REQUEST_TIMEOUT * 2)
-                    if result:
-                        with self.lock:
-                            self.results.append(result)
-                except Exception:
-                    pass
-                
-                pbar.update(1)
-                
-                # Hiển thị domain đang được xử lý (3 domains gần nhất)
-                with self.lock:
-                    current_target = futures.get(future, "Unknown")
-                    wp_count = self.stats['wp_targets']
-                    vuln_count = self.stats['vulnerable']
-                
-                # Update description với domain hiện tại
-                pbar.set_description(f"Hunting {current_target[:30]}... [WP:{wp_count} Vuln:{vuln_count}]")
+        if not base_found:
+            self.results['scan_metadata']['status'] = 'failed_no_access'
+            return self.results
         
-        pbar.close()
+        # Bước 2: Detect WordPress signatures và tính confidence
+        self._detect_wp_signatures()
+        self._calculate_wp_confidence()
         
-        # Hiển thị summary
-        elapsed = time.time() - start_time
-        print(f"\n{G}[✓] Completed in {elapsed:.1f}s | WP: {self.stats['wp_targets']} | Vuln: {self.stats['vulnerable']}{W}")
+        # Nếu không phải WordPress (confidence thấp), dừng sớm
+        if not self.results['wp']['detected']:
+            self.results['scan_metadata']['status'] = 'failed_not_wordpress'
+            self.results['scan_metadata']['duration'] = time.time() - start_time
+            return self.results
+        
+        # Bước 3: Detect server info
+        response = self._make_request(self.base_url)
+        if response:
+            self._detect_server_info(response)
+        
+        # Bước 4: Detect WordPress version
+        self._detect_wp_version_enhanced()
+        
+        # Bước 5: Detect theme
+        self._detect_theme_enhanced()
+        
+        # Bước 6: Detect plugins
+        self._detect_plugins_enhanced()
+        
+        # Bước 7: Check security endpoints
+        self._check_security_endpoints()
+        
+        # Bước 8: Check CVE vulnerabilities
+        self._check_cve_vulnerabilities()
+        
+        # Bước 9: Calculate risk score
+        self._calculate_risk_score()
+        
+        # Bước 10: Assess vulnerabilities
+        self._assess_vulnerabilities()
+        
+        # Cập nhật metadata
+        self.results['scan_metadata']['duration'] = round(time.time() - start_time, 2)
+        self.results['scan_metadata']['status'] = 'completed'
+        
+        return self.results
     
-    def _display_enhanced_statistics(self):
-        """Hiển thị enhanced thống kê cuối cùng"""
+    def get_summary(self):
+        """Trả về summary ngắn gọn để hiển thị"""
+        if not self.results['wp']['detected']:
+            return None
         
-        if not self.results:
+        summary = {
+            'domain': self.domain,
+            'wp_detected': self.results['wp']['detected'],
+            'wp_confidence': self.results['wp']['confidence'],
+            'wp_version': self.results['wp']['version'] or 'Unknown',
+            'wp_core_version': self.results['wp']['version'] or 'Unknown',
+            'theme': self.results['theme']['name'] or 'Unknown',
+            'theme_version': self.results['theme']['version'] or 'Unknown',
+            'server': self.results['server']['webserver'] or 'Unknown',
+            'server_full': self.results['server']['server_full'] or 'Unknown',
+            'php': self.results['server']['php'] or 'Unknown',
+            'xmlrpc': self.results['endpoints']['xmlrpc'],
+            'xmlrpc_status': self.results['endpoints']['xmlrpc_status'],
+            'rest_api': self.results['endpoints']['rest_api'],
+            'rest_status': self.results['endpoints']['rest_api_status'],
+            'upload_listing': self.results['endpoints']['upload_dir_listing'],
+            'upload_status': self.results['endpoints']['upload_status'],
+            'waf': self.results['security_indicators']['waf_detected'] or 'None',
+            'waf_type': self.results['security_indicators']['waf_type'] or '',
+            'plugins_count': len(self.results['plugins']),
+            'popular_plugins': self.results['plugin_analysis']['popular_plugins_found'],
+            'categories': dict(self.results['plugin_analysis']['categories']),
+            'cve_count': len(self.results['vulnerability_indicators']['cve_matches']),
+            'risk_score': self.results['vulnerability_indicators']['risk_score'],
+            'vulnerability_indicators': len(self.results['vulnerability_indicators']['potential_issues']),
+            'security_issues': sum([
+                1 if self.results['security_indicators']['directory_listing'] else 0,
+                1 if self.results['security_indicators']['xmlrpc_enabled'] else 0,
+                1 if self.results['security_indicators']['user_enumeration'] else 0,
+                len(self.results['security_indicators']['sensitive_files'])
+            ])
+        }
+        
+        # Thêm top plugin categories
+        if summary['categories']:
+            top_categories = sorted(summary['categories'].items(), key=lambda x: x[1], reverse=True)[:3]
+            summary['top_categories'] = [f"{cat}:{count}" for cat, count in top_categories]
+        
+        return summary
+
+def extract_domain(url):
+    """Trích xuất domain từ URL"""
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().replace("www.", "")
+        if re.match(r'^[a-z0-9][a-z00-9.-]*\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn|info\.vn|biz\.vn)$', domain):
+            return domain
+        return None
+    except:
+        return None
+
+def collect_wp_domains_parallel():
+    """Thu thập domain WordPress với xử lý song song thời gian thực"""
+    global stop_flag
+    
+    all_domains = set()
+    
+    # Load domain cũ nếu có
+    if os.path.exists(OUTPUT_FILE):
+        with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+            all_domains = {line.strip() for line in f if line.strip()}
+        print(f"✓ Đã load {len(all_domains):,} domain cũ")
+    
+    print(f"\n{'='*60}")
+    print(f"BẮT ĐẦU THU THẬP DOMAIN WORDPRESS")
+    print(f"Dorks: {len(DORKS)} | Workers: {MAX_WORKERS_DISCOVERY}")
+    print(f"{'='*60}\n")
+    
+    # Shared variables
+    lock = threading.Lock()
+    new_domains_queue = []
+    processed_dorks = 0
+    total_dorks = len(DORKS)
+    enhanced_results = {}
+    scan_count = 0
+    vulnerable_domains = []
+    
+    # Tạo file để ghi domain yếu ngay khi phát hiện
+    if os.path.exists(DOMAIN_VULN_FILE):
+        os.remove(DOMAIN_VULN_FILE)
+    
+    # Progress tracking
+    progress_data = {
+        'total_targets': 0,
+        'scanned_targets': 0,
+        'vulnerable_targets': 0,
+        'current_status': 'Initializing...'
+    }
+    
+    def update_progress_display():
+        """Cập nhật hiển thị progress bar"""
+        with lock:
+            if progress_data['total_targets'] == 0:
+                return
+            
+            scanned = progress_data['scanned_targets']
+            total = progress_data['total_targets']
+            vuln = progress_data['vulnerable_targets']
+            percentage = (scanned / total * 100) if total > 0 else 0
+            
+            bar_length = 40
+            filled_length = int(bar_length * scanned // total)
+            bar = '█' * filled_length + '░' * (bar_length - filled_length)
+            
+            status_line = (f"\r\033[K[{bar}] {scanned:3d}/{total:3d} "
+                          f"({percentage:5.1f}%) | Vuln: {vuln:2d} | "
+                          f"{progress_data['current_status'][:40]}")
+            
+            sys.stdout.write(status_line)
+            sys.stdout.flush()
+    
+    def process_dork(dork_idx, dork):
+        nonlocal processed_dorks, new_domains_queue, progress_data
+        
+        if stop_flag:
+            return dork_idx, 0, dork
+        
+        try:
+            progress_data['current_status'] = f"Dork: {dork[:40]}..."
+            update_progress_display()
+            
+            with DDGS() as ddgs:
+                results = ddgs.text(
+                    query=dork,
+                    region="vn-vn",
+                    safesearch="off",
+                    max_results=NUM_RESULTS_PER_DORK
+                )
+                
+                local_new_domains = []
+                for result in results:
+                    if stop_flag:
+                        break
+                        
+                    url = result.get('href', '') or result.get('url', '')
+                    if url:
+                        domain = extract_domain(url)
+                        if domain:
+                            with lock:
+                                if domain not in all_domains:
+                                    all_domains.add(domain)
+                                    local_new_domains.append(domain)
+                                    new_domains_queue.append(domain)
+                                    progress_data['total_targets'] += 1
+            
+            with lock:
+                processed_dorks += 1
+            
+            update_progress_display()
+            return dork_idx, len(local_new_domains), dork
+            
+        except Exception as e:
+            with lock:
+                processed_dorks += 1
+            return dork_idx, 0, dork
+    
+    def perform_enhanced_recon(domain):
+        """Thực hiện enhanced recon trên một domain"""
+        nonlocal enhanced_results, scan_count, progress_data, vulnerable_domains
+        
+        if stop_flag:
             return
         
-        total_targets = self.stats['total_targets']
-        alive_targets = self.stats['alive_targets']
-        wp_sites = [r for r in self.results if r.get('wp_detection', {}).get('is_wordpress')]
-        wp_count = len(wp_sites)
-        high_risk_sites = self.stats['high_risk']
+        try:
+            progress_data['current_status'] = f"Scanning: {domain[:30]}..."
+            update_progress_display()
+            
+            recon = WordPressReconEnhanced(domain)
+            result = recon.scan()
+            
+            with lock:
+                enhanced_results[domain] = result
+                scan_count += 1
+                progress_data['scanned_targets'] += 1
+            
+            if result['wp']['detected']:
+                summary = recon.get_summary()
+                if summary:
+                    total_issues = summary['vulnerability_indicators'] + summary['security_issues']
+                    risk_score = summary['risk_score']
+                    
+                    # CHỈ HIỂN THỊ NẾU CÓ VẤN ĐỀ BẢO MẬT HOẶC RISK CAO
+                    if total_issues > 0 or risk_score >= 30 or summary['wp_confidence'] < 40:
+                        with lock:
+                            vulnerable_domains.append(domain)
+                            progress_data['vulnerable_targets'] += 1
+                        
+                        # Hiển thị chi tiết domain có vuln
+                        print(f"\n\033[K")  # Xóa dòng progress
+                        
+                        # Risk level color
+                        if risk_score >= 70:
+                            risk_color = "\033[91m"  # Red
+                            risk_level = "CRITICAL"
+                        elif risk_score >= 50:
+                            risk_color = "\033[93m"  # Yellow
+                            risk_level = "HIGH"
+                        elif risk_score >= 30:
+                            risk_color = "\033[33m"  # Orange
+                            risk_level = "MEDIUM"
+                        else:
+                            risk_color = "\033[92m"  # Green
+                            risk_level = "LOW"
+                        
+                        # Hiển thị thông tin chi tiết
+                        print(f"{risk_color}{'='*80}\033[0m")
+                        print(f"{risk_color}⚠️  VULNERABLE DOMAIN DETECTED: {domain}\033[0m")
+                        print(f"{risk_color}┌─{'─'*78}┐\033[0m")
+                        
+                        # Basic Info
+                        print(f"{risk_color}│\033[0m \033[1mBasic Information:\033[0m")
+                        print(f"{risk_color}│\033[0m   • WP Version: {summary['wp_version']} | Confidence: {summary['wp_confidence']}%")
+                        print(f"{risk_color}│\033[0m   • Theme: {summary['theme']} v{summary['theme_version']}")
+                        print(f"{risk_color}│\033[0m   • Server: {summary['server']} | PHP: {summary['php']}")
+                        
+                        # Security Status
+                        print(f"{risk_color}│\033[0m \033[1mSecurity Status:\033[0m")
+                        print(f"{risk_color}│\033[0m   • XML-RPC: {'✅ Enabled' if summary['xmlrpc'] else '❌ Disabled'} "
+                              f"(Status: {summary['xmlrpc_status']})")
+                        print(f"{risk_color}│\033[0m   • REST API: {'✅ Enabled' if summary['rest_api'] else '❌ Disabled'} "
+                              f"(Status: {summary['rest_status']})")
+                        print(f"{risk_color}│\033[0m   • Upload Listing: {'⚠️  Enabled' if summary['upload_listing'] else '✅ Disabled'} "
+                              f"(Status: {summary['upload_status']})")
+                        print(f"{risk_color}│\033[0m   • WAF: {summary['waf']} ({summary['waf_type']})")
+                        
+                        # Vulnerabilities
+                        print(f"{risk_color}│\033[0m \033[1mVulnerability Assessment:\033[0m")
+                        print(f"{risk_color}│\033[0m   • Risk Score: {risk_score}/100 \033[1m[{risk_level}]\033[0m")
+                        print(f"{risk_color}│\033[0m   • CVE Matches: {summary['cve_count']}")
+                        print(f"{risk_color}│\033[0m   • Security Issues: {summary['security_issues']}")
+                        print(f"{risk_color}│\033[0m   • Total Indicators: {total_issues}")
+                        
+                        # Plugins
+                        if summary['plugins_count'] > 0:
+                            print(f"{risk_color}│\033[0m \033[1mPlugin Analysis:\033[0m")
+                            print(f"{riskColor}│\033[0m   • Total Plugins: {summary['plugins_count']}")
+                            print(f"{risk_color}│\033[0m   • Popular Plugins: {summary['popular_plugins']}")
+                            if summary.get('top_categories'):
+                                print(f"{risk_color}│\033[0m   • Top Categories: {', '.join(summary['top_categories'])}")
+                        
+                        print(f"{risk_color}└─{'─'*78}┘\033[0m")
+                        print(f"{risk_color}{'='*80}\033[0m\n")
+                        
+                        # Ghi domain yếu vào file
+                        with lock:
+                            with open(DOMAIN_VULN_FILE, "a", encoding="utf-8") as f:
+                                f.write(f"{domain}|Risk:{risk_score}|"
+                                       f"WP:{summary['wp_version']}|PHP:{summary['php']}|"
+                                       f"Server:{summary['server']}|WAF:{summary['waf']}|"
+                                       f"XMLRPC:{summary['xmlrpc']}|REST:{summary['rest_api']}|"
+                                       f"Upload:{summary['upload_listing']}|"
+                                       f"CVE:{summary['cve_count']}|Plugins:{summary['plugins_count']}\n")
+                    else:
+                        # Hiển thị dòng status cho domain bình thường
+                        print(f"\r\033[K\033[92m✓\033[0m {domain[:40]:<40} | "
+                              f"WP:{summary['wp_version'][:8]:<8} | "
+                              f"Risk:{summary['risk_score']:<3} | "
+                              f"✅ Clean")
         
-        print(f"\n{B}{BOLD}[📊] ENHANCED STATISTICS{W}")
-        print(f"{C}[*] Total targets processed: {total_targets}{W}")
+        except Exception as e:
+            # Hiển thị lỗi
+            print(f"\r\033[K\033[91m✗\033[0m {domain[:40]:<40} | Error: {str(e)[:30]}")
+            with lock:
+                progress_data['scanned_targets'] += 1
         
-        if total_targets > 0:
-            print(f"{C}[*] Alive targets: {alive_targets} ({alive_targets/total_targets*100:.1f}%){W}")
-            print(f"{G}[+] WordPress sites found: {wp_count} ({wp_count/total_targets*100:.1f}% of total){W}")
+        finally:
+            update_progress_display()
+    
+    print("\nInitializing scan...\n")
+    
+    # Xử lý dorks song song
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS_DISCOVERY) as executor:
+        futures = {executor.submit(process_dork, idx, dork): (idx, dork) 
+                  for idx, dork in enumerate(DORKS, 1)}
         
-        if wp_sites:
-            # Risk distribution chi tiết
-            critical_risk = len([r for r in wp_sites if r.get('risk_analysis', {}).get('overall_risk_level') == 'critical'])
-            high_risk = len([r for r in wp_sites if r.get('risk_analysis', {}).get('overall_risk_level') == 'high'])
-            medium_risk = len([r for r in wp_sites if r.get('risk_analysis', {}).get('overall_risk_level') == 'medium'])
-            low_risk = len([r for r in wp_sites if r.get('risk_analysis', {}).get('overall_risk_level') == 'low'])
-            
-            print(f"\n{G}[📈] RISK DISTRIBUTION (WordPress sites):{W}")
-            print(f"  🔥 Critical (>80): {critical_risk} sites")
-            print(f"  ⚠️  High (60-80): {high_risk} sites")
-            print(f"  🔶 Medium (40-60): {medium_risk} sites")
-            print(f"  ✅ Low (≤40): {low_risk} sites")
-            
-            # Common findings statistics
-            all_findings = []
-            for site in wp_sites:
-                all_findings.extend(site.get('prioritized_findings', []))
-            
-            finding_counts = {}
-            for finding in all_findings:
-                f_type = finding.get('type', 'UNKNOWN')
-                finding_counts[f_type] = finding_counts.get(f_type, 0) + 1
-            
-            print(f"\n{G}[🔍] MOST COMMON FINDINGS:{W}")
-            sorted_findings = sorted(finding_counts.items(), key=lambda x: x[1], reverse=True)
-            for f_type, count in sorted_findings[:5]:
-                print(f"  {f_type}: {count} sites")
-            
-            # Plugin statistics
-            all_plugins = []
-            for site in wp_sites:
-                plugins = site.get('surface_mapping', {}).get('passive_surface', {}).get('detected_plugins', [])
-                all_plugins.extend([p['name'] for p in plugins])
-            
-            if all_plugins:
-                plugin_counts = Counter(all_plugins)
-                print(f"\n{G}[🧩] MOST COMMON PLUGINS:{W}")
-                for plugin, count in plugin_counts.most_common(5):
-                    print(f"  {plugin}: {count} sites")
-            
-            # Top 5 most vulnerable (enhanced)
-            wp_sites.sort(key=lambda x: x.get('risk_analysis', {}).get('overall_risk', 0), reverse=True)
-            
-            print(f"\n{R}{BOLD}[🔥] TOP 5 MOST VULNERABLE SITES:{W}")
-            for i, site in enumerate(wp_sites[:5], 1):
-                risk = site.get('risk_analysis', {}).get('overall_risk', 0)
-                risk_level = site.get('risk_analysis', {}).get('overall_risk_level', 'low')
-                url = site.get('normalized_url', '')[:55]
-                scenario = site.get('risk_analysis', {}).get('worst_scenario', '')
-                findings = len(site.get('prioritized_findings', []))
+        for future in as_completed(futures):
+            if stop_flag:
+                break
                 
-                risk_color = R if risk_level == 'critical' else Y if risk_level == 'high' else M
-                print(f"{i:2d}. {risk_color}{url:<55} Risk: {risk:.1f} ({risk_level}) | Scenario: {scenario} | Findings: {findings}{W}")
+            dork_idx, domains_found, dork = future.result()
             
-            # Performance metrics
-            total_vectors = sum([site.get('wp_detection', {}).get('vector_count', 0) for site in wp_sites])
-            avg_vectors = total_vectors / wp_count if wp_count > 0 else 0
+            # Thực hiện scan cho domain mới tìm thấy
+            if domains_found > 0 and not stop_flag:
+                # Lấy domain mới từ queue và scan
+                with lock:
+                    domains_to_scan = []
+                    while new_domains_queue and len(domains_to_scan) < 10:  # Giới hạn mỗi lần
+                        domains_to_scan.append(new_domains_queue.pop(0))
+                
+                # Scan các domain này
+                if domains_to_scan:
+                    with ThreadPoolExecutor(max_workers=MAX_WORKERS_RECON) as recon_executor:
+                        recon_futures = [recon_executor.submit(perform_enhanced_recon, domain) 
+                                        for domain in domains_to_scan]
+                        
+                        # Không cần chờ tất cả, để chạy nền
+                        for recon_future in recon_futures:
+                            try:
+                                recon_future.result(timeout=30)
+                            except:
+                                pass
             
-            print(f"\n{C}[📊] PERFORMANCE METRICS:{W}")
-            print(f"  Average WP detection vectors per site: {avg_vectors:.1f}")
-            print(f"  High risk sites: {high_risk_sites}")
-            print(f"  Critical findings total: {self.stats['critical_findings']}")
+            # Delay ngẫu nhiên
+            if not stop_flag and dork_idx < len(DORKS):
+                time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+    
+    # Scan các domain còn lại trong queue
+    if not stop_flag and new_domains_queue:
+        progress_data['current_status'] = f"Scanning remaining {len(new_domains_queue)} domains..."
+        update_progress_display()
+        
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS_RECON) as recon_executor:
+            recon_futures = []
+            for domain in new_domains_queue:
+                if stop_flag:
+                    break
+                recon_futures.append(recon_executor.submit(perform_enhanced_recon, domain))
+            
+            # Chờ tất cả hoàn thành
+            for recon_future in recon_futures:
+                try:
+                    recon_future.result(timeout=60)
+                except:
+                    pass
+    
+    print("\n\033[K")  # Xóa dòng progress cuối cùng
+    
+    # Lưu tất cả domain
+    if not stop_flag:
+        sorted_domains = sorted(all_domains)
+        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+            for domain in sorted_domains:
+                f.write(domain + "\n")
+        
+        # Lưu kết quả enhanced
+        if enhanced_results:
+            enhanced_data = {
+                "metadata": {
+                    "total_domains": len(all_domains),
+                    "scanned_domains": scan_count,
+                    "vulnerable_domains": len(vulnerable_domains),
+                    "scan_date": time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "schema_version": "2.2"
+                },
+                "results": enhanced_results
+            }
+            
+            with open(ENHANCED_OUTPUT_FILE, "w", encoding="utf-8") as f:
+                json.dump(enhanced_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"\n✓ Đã lưu {scan_count} kết quả enhanced vào {ENHANCED_OUTPUT_FILE}")
+    
+    return sorted_domains, scan_count, len(vulnerable_domains)
 
-# ==================== MAIN ENHANCED ====================
-
-def main_enhanced():
-    print(f"""{B}
-    ╔══════════════════════════════════════════════════════════════════╗
-    ║           WP HUNTER ENHANCED - MULTI-PHASE ARCHITECTURE          ║
-    ║                   "No WordPress Left Behind"                     ║
-    ╚══════════════════════════════════════════════════════════════════╝{W}""")
-    
-    print(f"\n{Y}[🎯] ENHANCED CORE PRINCIPLES:{W}")
-    principles = [
-        "1. Phase 0: Passive source enrichment (CT logs, crawl dumps, historical)",
-        "2. Phase 1: Always try HTTP + HTTPS (.gov.vn/.edu.vn thường HTTP-only)",
-        "3. Phase 2: ≥ 2 behavioral signals for WordPress detection (7 vectors)",
-        "4. Phase 3: Plugin/theme fingerprinting + passive detection",
-        "5. Phase 4: Advanced correlation patterns (6+ scenarios)",
-        "6. Phase 5: Scenario-based risk with impact/exploitability scores",
-        "7. Phase 6: Enhanced prioritization with remediation guidance"
-    ]
-    
-    for principle in principles:
-        print(f"  {principle}")
-    
-    print(f"\n{C}[⚙️] ENHANCED PHASES:{W}")
-    phases = [
-        "Phase 0: Passive Source Enrichment",
-        "Phase 1: Liveness & Normalization (requests - chính xác)",
-        "Phase 2: WP Detection - 7 vectors (behavioral + static)",
-        "Phase 3: Surface Mapping with Plugin/Theme Fingerprinting",
-        "Phase 4: Enhanced Weakness Correlation",
-        "Phase 5: Scenario-based Risk Scoring with Impact Analysis",
-        "Phase 6: Enhanced Prioritization & Multi-Format Output"
-    ]
-    
-    for phase in phases:
-        print(f"  {phase}")
-    
-    # Tìm target file
-    target_files = ['targets.txt', 'domains.txt', 'urls.txt', 'input.txt', 'dirty_targets.txt']
-    target_file = None
-    
-    for file in target_files:
-        if os.path.exists(file):
-            target_file = file
-            print(f"\n{G}[*] Found target file: {file}{W}")
-            break
-    
-    if not target_file:
-        print(f"\n{Y}[*] No target file found. Creating sample 'targets.txt'{W}")
-        with open('targets.txt', 'w') as f:
-            f.write("# Add domains here, one per line\n")
-            f.write("# Tool will auto-extract domains, no cleaning needed\n")
-            f.write("example.com\n")
-            f.write("https://wordpress.org\n")
-            f.write("http://test.gov.vn\n")
-            f.write("university.edu.vn\n")
-            f.write("agency.gov.uk\n")
-        target_file = 'targets.txt'
-    
-    # Hỏi về passive enrichment
-    print(f"\n{C}[?] Enable passive source enrichment? (y/n) [n]: {W}", end='')
-    use_passive = input().strip().lower() == 'y'
-    
-    # Hỏi về dirty target generation
-    generate_dirty = False
-    if use_passive:
-        print(f"{C}[?] Generate dirty targets from passive sources? (y/n) [y]: {W}", end='')
-        generate_dirty_input = input().strip().lower()
-        generate_dirty = generate_dirty_input != 'n'
-    
-    # Hỏi về số lượng targets
-    print(f"{C}[?] Maximum targets to scan [100]: {W}", end='')
-    max_targets_input = input().strip()
-    max_targets = int(max_targets_input) if max_targets_input.isdigit() else 100
-    
-    # Khởi tạo và chạy enhanced orchestrator
-    orchestrator = WPHunterEnhancedOrchestrator(use_passive_sources=use_passive)
+def analyze_results():
+    """Phân tích kết quả"""
+    if not os.path.exists(ENHANCED_OUTPUT_FILE):
+        print("⚠️  Không có file kết quả enhanced để phân tích")
+        return None
     
     try:
-        orchestrator.scan_targets(
-            targets_file=target_file,
-            max_targets=max_targets,
-            generate_dirty=generate_dirty
-        )
-    except KeyboardInterrupt:
-        print(f"\n{R}[!] Scan interrupted by user{W}")
+        with open(ENHANCED_OUTPUT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        results = data.get("results", {})
+        if not results:
+            print("⚠️  Không có kết quả nào để phân tích")
+            return None
+        
+        wp_detected = 0
+        vulnerable_count = 0
+        plugin_stats = defaultdict(int)
+        risk_scores = []
+        
+        for domain, result in results.items():
+            if result['wp']['detected']:
+                wp_detected += 1
+                
+                # Đếm domain có vấn đề
+                issues = len(result['vulnerability_indicators']['potential_issues'])
+                security_issues = sum([
+                    1 if result['security_indicators']['directory_listing'] else 0,
+                    1 if result['security_indicators']['xmlrpc_enabled'] else 0,
+                    1 if result['security_indicators']['user_enumeration'] else 0,
+                    len(result['security_indicators']['sensitive_files'])
+                ])
+                
+                risk_score = result['vulnerability_indicators']['risk_score']
+                risk_scores.append(risk_score)
+                
+                if issues > 0 or security_issues > 0 or risk_score >= 30:
+                    vulnerable_count += 1
+                
+                # Thống kê plugin
+                for plugin in result['plugins']:
+                    if plugin.get('popular'):
+                        plugin_name = plugin.get('slug', 'Unknown')
+                        plugin_stats[plugin_name] += 1
+        
+        # Tính risk trung bình
+        avg_risk = sum(risk_scores) / len(risk_scores) if risk_scores else 0
+        
+        print(f"\n📊 PHÂN TÍCH KẾT QUẢ:")
+        print(f"  • Tổng domain scan: {len(results)}")
+        print(f"  • WordPress detected: {wp_detected} ({wp_detected/len(results)*100:.1f}%)")
+        print(f"  • Domain có vấn đề: {vulnerable_count} ({vulnerable_count/wp_detected*100:.1f}% of WP)")
+        print(f"  • Risk score trung bình: {avg_risk:.1f}/100")
+        
+        # Phân phối risk
+        if risk_scores:
+            high_risk = len([r for r in risk_scores if r >= 70])
+            med_risk = len([r for r in risk_scores if 50 <= r < 70])
+            low_risk = len([r for r in risk_scores if r < 50])
+            
+            print(f"  • Risk phân phối: CRITICAL({high_risk}) HIGH({med_risk}) LOW({low_risk})")
+        
+        if plugin_stats:
+            print(f"\n🔥 TOP 5 PLUGIN PHỔ BIẾN:")
+            for i, (plugin_name, count) in enumerate(sorted(plugin_stats.items(), 
+                                                          key=lambda x: x[1], reverse=True)[:5], 1):
+                percentage = (count / wp_detected) * 100 if wp_detected > 0 else 0
+                print(f"  {i}. {plugin_name:<25} {count:3d} sites ({percentage:.1f}%)")
+        
+        return {
+            "total_scanned": len(results),
+            "wp_detected": wp_detected,
+            "vulnerable": vulnerable_count,
+            "avg_risk": avg_risk
+        }
+        
     except Exception as e:
-        print(f"{R}[!] Fatal error: {str(e)}{W}")
-        import traceback
-        traceback.print_exc()
+        print(f"⚠️  Lỗi phân tích: {e}")
+        return None
+
+def main():
+    """Hàm chính"""
+    global stop_flag
+    
+    print("=" * 80)
+    print("WORDPRESS DOMAIN COLLECTOR & ENHANCED PLUGIN ANALYSIS")
+    print("VERSION 2.2 - WITH CVE MAPPING & RISK SCORING")
+    print("=" * 80)
+    
+    try:
+        # Bước 1: Thu thập domain và recon song song
+        domains, scanned_count, vuln_count = collect_wp_domains_parallel()
+        
+        if not domains:
+            print("Không có domain nào để scan!")
+            return
+        
+        print(f"\n{'='*60}")
+        print("TỔNG KẾT QUẢ")
+        print(f"{'='*60}")
+        
+        # Bước 2: Phân tích kết quả
+        stats = analyze_results()
+        
+        if stats:
+            print(f"\n✅ KẾT QUẢ CUỐI CÙNG:")
+            print(f"  • Tổng domain thu thập: {len(domains)}")
+            print(f"  • Đã scan: {stats['total_scanned']}")
+            print(f"  • WordPress phát hiện: {stats['wp_detected']}")
+            print(f"  • Domain có vấn đề: {stats['vulnerable']}")
+            print(f"  • Risk score trung bình: {stats['avg_risk']:.1f}")
+        
+        # Hiển thị domain có vấn đề
+        if os.path.exists(DOMAIN_VULN_FILE):
+            with open(DOMAIN_VULN_FILE, "r", encoding="utf-8") as f:
+                vuln_lines = f.readlines()
+            
+            if vuln_lines:
+                print(f"\n⚠️  DOMAIN CÓ VẤN ĐỀ BẢO MẬT ({len(vuln_lines)}):")
+                for i, line in enumerate(vuln_lines[:10], 1):
+                    parts = line.strip().split('|')
+                    if len(parts) >= 2:
+                        domain = parts[0]
+                        risk = parts[1] if len(parts) > 1 else ""
+                        print(f"  {i:2d}. {domain:<30} {risk}")
+                
+                if len(vuln_lines) > 10:
+                    print(f"  ... và {len(vuln_lines) - 10} domain khác")
+        
+        print(f"\n📁 KẾT QUẢ LƯU TẠI:")
+        print(f"  • Danh sách domain: {OUTPUT_FILE}")
+        print(f"  • Domain có vấn đề: {DOMAIN_VULN_FILE}")
+        print(f"  • Kết quả scan đầy đủ: {ENHANCED_OUTPUT_FILE}")
+        print(f"{'='*60}\n")
+        
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Đã dừng theo yêu cầu người dùng")
+        stop_flag = True
+    except Exception as e:
+        print(f"\n❌ Lỗi: {e}")
 
 if __name__ == "__main__":
-    main_enhanced()
+    main()
