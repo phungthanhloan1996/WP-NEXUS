@@ -1,0 +1,514 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-21T11:12:19.512319",
+    "total_sites": 1,
+    "wp_sites": 1,
+    "engine": "WP Hunter Enhanced - Multi-Phase Architecture",
+    "version": "3.0",
+    "principles": [
+      "Phase 0: Passive source enrichment",
+      "Phase 1: Always try HTTP + HTTPS",
+      "Phase 2: ≥ 2 behavioral signals for WP detection",
+      "Phase 3: Plugin/theme fingerprinting",
+      "Phase 4: Advanced correlation patterns",
+      "Phase 5: Scenario-based risk with impact/exploitability",
+      "Phase 6: Enhanced prioritization"
+    ]
+  },
+  "results": [
+    {
+      "original_domain": "wordpress.org",
+      "normalized_url": "https://wordpress.org",
+      "liveness_check": {
+        "domain": "wordpress.org",
+        "normalized": "wordpress.org",
+        "alive": true,
+        "protocol": "https",
+        "final_url": "https://wordpress.org/",
+        "status_code": 200,
+        "response_time": 0.7672605514526367,
+        "error": null,
+        "redirect_chain": []
+      },
+      "wp_detection": {
+        "is_wordpress": true,
+        "confidence": 100,
+        "vector_count": 5,
+        "vector_breakdown": {
+          "DIRECT_ENDPOINT": 6,
+          "BEHAVIORAL": 2,
+          "HTTP_HEADER": 1,
+          "HTML_ARTIFACT": 5,
+          "REST_API_BEHAVIOR": 1
+        },
+        "findings": [
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/wp-login.php",
+            "status": 301,
+            "confidence": 95
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/wp-admin/",
+            "status": 302,
+            "confidence": 95
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/wp-json/",
+            "status": 200,
+            "confidence": 85
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/feed/",
+            "status": 301,
+            "confidence": 85
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/?feed=rss2",
+            "status": 301,
+            "confidence": 85
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/wp-cron.php",
+            "status": 200,
+            "confidence": 85
+          },
+          {
+            "vector": "BEHAVIORAL",
+            "type": "XMLRPC_EMPTY_RESPONSE",
+            "details": "XML-RPC responds to empty request with XML-RPC fault",
+            "confidence": 92
+          },
+          {
+            "vector": "BEHAVIORAL",
+            "type": "REST_API_OPTIONS",
+            "details": "REST API allows methods: GET",
+            "confidence": 88
+          },
+          {
+            "vector": "HTTP_HEADER",
+            "type": "Link",
+            "value": "<https://wordpress.org/wp-json/>; rel=\"https://api.w.org/\", <https://wordpress.org/wp-json/wp/v2/pages/457>; rel=\"alternate\"; title=\"JSON\"; type=\"application/json\", <https://w.org/>; rel=shortlink",
+            "confidence": 85
+          },
+          {
+            "vector": "HTML_ARTIFACT",
+            "type": "WP_CONTENT_RESOURCE",
+            "confidence": 45
+          },
+          {
+            "vector": "HTML_ARTIFACT",
+            "type": "WP_INCLUDES_RESOURCE",
+            "confidence": 45
+          },
+          {
+            "vector": "HTML_ARTIFACT",
+            "type": "WP_GUTENBERG_BLOCK",
+            "confidence": 50
+          },
+          {
+            "vector": "HTML_ARTIFACT",
+            "type": "WP_GENERATOR_META",
+            "confidence": 30
+          },
+          {
+            "vector": "HTML_ARTIFACT",
+            "type": "WP_HTML_COMMENT",
+            "confidence": 20
+          },
+          {
+            "vector": "REST_API_BEHAVIOR",
+            "type": "WP_REST_INDEX",
+            "confidence": 95
+          }
+        ],
+        "base_url": "https://wordpress.org",
+        "timestamp": "2026-01-21T11:12:10.688055"
+      },
+      "surface_mapping": {
+        "critical_surface": {
+          "xmlrpc": {
+            "active": false,
+            "status": 0,
+            "methods": [],
+            "pingback_enabled": false,
+            "bruteforce_possible": false
+          },
+          "rest_api": {
+            "active": true,
+            "active_endpoints": [
+              "/wp-json/wp/v2/",
+              "/wp-json/wp/v2/users",
+              "/wp-json/wp/v2/posts",
+              "/wp-json/wp/v2/pages",
+              "/wp-json/wp/v2/comments"
+            ],
+            "exposing_endpoints": [
+              "/wp-json/wp/v2/",
+              "/wp-json/wp/v2/users",
+              "/wp-json/wp/v2/posts",
+              "/wp-json/wp/v2/pages",
+              "/wp-json/wp/v2/comments"
+            ],
+            "detailed_results": {
+              "/wp-json/wp/v2/": {
+                "active": true,
+                "status": 200,
+                "requires_auth": false,
+                "exposes_data": true,
+                "keys": [
+                  "namespace",
+                  "routes",
+                  "_links"
+                ]
+              },
+              "/wp-json/wp/v2/users": {
+                "active": true,
+                "status": 200,
+                "requires_auth": false,
+                "exposes_data": true,
+                "item_count": 5
+              },
+              "/wp-json/wp/v2/posts": {
+                "active": true,
+                "status": 200,
+                "requires_auth": false,
+                "exposes_data": true,
+                "item_count": 0
+              },
+              "/wp-json/wp/v2/pages": {
+                "active": true,
+                "status": 200,
+                "requires_auth": false,
+                "exposes_data": true,
+                "item_count": 10
+              },
+              "/wp-json/wp/v2/comments": {
+                "active": true,
+                "status": 200,
+                "requires_auth": false,
+                "exposes_data": true,
+                "item_count": 0
+              }
+            },
+            "users_exposed": true,
+            "posts_exposed": true
+          },
+          "user_enumeration": {
+            "enumerable": true,
+            "methods": [
+              "rest_api",
+              "oembed"
+            ],
+            "user_count": 6,
+            "users": [
+              {
+                "id": 8213290,
+                "name": "Adam Wood"
+              },
+              {
+                "id": 6267,
+                "name": "Joen Asmussen"
+              },
+              {
+                "id": 1819835,
+                "name": "Kelly Choyce-Dwan"
+              },
+              {
+                "id": 14607410,
+                "name": "Pablo Postigo"
+              },
+              {
+                "id": 5911429,
+                "name": "WordPress.org"
+              }
+            ],
+            "rest_api_exposed": true
+          },
+          "login_exposed": {
+            "exposed": false,
+            "status": 301,
+            "requires_auth": false,
+            "has_redirect": true,
+            "security_headers": {
+              "X-Frame-Options": "SAMEORIGIN",
+              "Strict-Transport-Security": "max-age=3600"
+            }
+          },
+          "upload_dir": {
+            "accessible_uploads": [],
+            "writable_check": false
+          }
+        },
+        "passive_surface": {
+          "exposed_files": [
+            {
+              "path": "/wp-config.php",
+              "status": 200,
+              "risk": "critical",
+              "type": "php_config"
+            }
+          ],
+          "directory_listing": [
+            {
+              "directory": "/wp-content/plugins/akismet/readme.txt",
+              "status": 200,
+              "potential_listing": true
+            },
+            {
+              "directory": "/wp-content/plugins/akismet/_inc/akismet.css",
+              "status": 200,
+              "potential_listing": true
+            },
+            {
+              "directory": "/wp-content/plugins/akismet/",
+              "status": 200,
+              "potential_listing": true
+            }
+          ],
+          "detected_plugins": [
+            {
+              "name": "akismet",
+              "path": "/wp-content/plugins/akismet/readme.txt",
+              "confidence": 90
+            }
+          ],
+          "detected_themes": [],
+          "paths_checked": 64,
+          "paths_found": 4
+        }
+      },
+      "correlation_analysis": {
+        "weakness_flags": [
+          "config_exposed",
+          "directory_listing",
+          "plugin_exposed",
+          "rest_api_exposed",
+          "rest_posts_exposed",
+          "rest_user_enumeration",
+          "rest_users_exposed",
+          "user_enumeration"
+        ],
+        "weakness_count": 8,
+        "detected_patterns": [
+          {
+            "pattern": "RCE_CHAIN",
+            "description": "Chain có thể dẫn đến Remote Code Execution",
+            "match_score": 0.33,
+            "weakness_match": 2,
+            "total_weaknesses": 6,
+            "multiplier": 2.8,
+            "scenario": "RCE",
+            "matched_weaknesses": [
+              "directory_listing",
+              "plugin_exposed"
+            ],
+            "risk_weight": 1.0
+          },
+          {
+            "pattern": "DATA_EXFIL",
+            "description": "Chain có thể dẫn đến data exfiltration",
+            "match_score": 0.5,
+            "weakness_match": 3,
+            "total_weaknesses": 6,
+            "multiplier": 2.1,
+            "scenario": "DATA_EXFILTRATION",
+            "matched_weaknesses": [
+              "config_exposed",
+              "directory_listing",
+              "rest_api_exposed"
+            ],
+            "risk_weight": 1.2
+          },
+          {
+            "pattern": "AUTH_BYPASS",
+            "description": "Potential authentication bypass vectors",
+            "match_score": 0.4,
+            "weakness_match": 2,
+            "total_weaknesses": 5,
+            "multiplier": 2.2,
+            "scenario": "AUTH_BYPASS",
+            "matched_weaknesses": [
+              "rest_api_exposed",
+              "user_enumeration"
+            ],
+            "risk_weight": 1.0
+          }
+        ],
+        "pattern_count": 3,
+        "correlation_multiplier": 15.52,
+        "correlation_score": 95,
+        "critical_weaknesses": [
+          "config_exposed"
+        ]
+      },
+      "risk_analysis": {
+        "overall_risk": 100,
+        "overall_risk_level": "critical",
+        "worst_scenario": "RCE",
+        "worst_scenario_risk": 100,
+        "worst_scenario_details": {
+          "scenario": "RCE",
+          "name": "Remote Code Execution",
+          "risk_score": 100,
+          "risk_level": "critical",
+          "indicator_score": 37.5,
+          "indicators_present": 3,
+          "total_indicators": 8,
+          "present_indicators": [
+            "directory_listing",
+            "plugin_exposed",
+            "config_exposed"
+          ],
+          "impact": "critical",
+          "exploitability": "high"
+        },
+        "scenario_breakdown": [
+          {
+            "scenario": "RCE",
+            "name": "Remote Code Execution",
+            "risk_score": 100,
+            "risk_level": "critical",
+            "indicator_score": 37.5,
+            "indicators_present": 3,
+            "total_indicators": 8,
+            "present_indicators": [
+              "directory_listing",
+              "plugin_exposed",
+              "config_exposed"
+            ],
+            "impact": "critical",
+            "exploitability": "high"
+          },
+          {
+            "scenario": "BRUTEFORCE",
+            "name": "Authentication Brute-force",
+            "risk_score": 100,
+            "risk_level": "critical",
+            "indicator_score": 25.0,
+            "indicators_present": 2,
+            "total_indicators": 8,
+            "present_indicators": [
+              "user_enumeration",
+              "rest_user_enumeration"
+            ],
+            "impact": "high",
+            "exploitability": "very_high"
+          },
+          {
+            "scenario": "DATA_EXFILTRATION",
+            "name": "Data Exfiltration",
+            "risk_score": 100,
+            "risk_level": "critical",
+            "indicator_score": 62.5,
+            "indicators_present": 5,
+            "total_indicators": 8,
+            "present_indicators": [
+              "config_exposed",
+              "directory_listing",
+              "rest_api_exposed",
+              "rest_users_exposed",
+              "rest_posts_exposed"
+            ],
+            "impact": "high",
+            "exploitability": "medium"
+          },
+          {
+            "scenario": "PLUGIN_EXPLOIT",
+            "name": "Vulnerable Plugin Exploit",
+            "risk_score": 100,
+            "risk_level": "critical",
+            "indicator_score": 25.0,
+            "indicators_present": 2,
+            "total_indicators": 8,
+            "present_indicators": [
+              "plugin_exposed",
+              "directory_listing"
+            ],
+            "impact": "high",
+            "exploitability": "high"
+          },
+          {
+            "scenario": "GOV_SPECIAL",
+            "name": "Government/Edu Special Case",
+            "risk_score": 100,
+            "risk_level": "critical",
+            "indicator_score": 25.0,
+            "indicators_present": 2,
+            "total_indicators": 8,
+            "present_indicators": [
+              "config_exposed",
+              "directory_listing"
+            ],
+            "impact": "very_high",
+            "exploitability": "medium"
+          },
+          {
+            "scenario": "AUTH_BYPASS",
+            "name": "Authentication Bypass",
+            "risk_score": 100,
+            "risk_level": "critical",
+            "indicator_score": 37.5,
+            "indicators_present": 3,
+            "total_indicators": 8,
+            "present_indicators": [
+              "rest_api_exposed",
+              "user_enumeration",
+              "rest_users_exposed"
+            ],
+            "impact": "critical",
+            "exploitability": "medium"
+          }
+        ],
+        "high_risk_scenario_count": 6,
+        "medium_risk_scenario_count": 0,
+        "total_scenarios_evaluated": 6
+      },
+      "prioritized_findings": [
+        {
+          "type": "EXPOSED_CONFIG",
+          "category": "CRITICAL",
+          "risk": "critical",
+          "details": "Exposed sensitive file: /wp-config.php",
+          "priority_score": 100,
+          "remediation": "Immediately remove or restrict access",
+          "id": 1
+        },
+        {
+          "type": "USER_ENUMERATION",
+          "category": "HIGH",
+          "risk": "high",
+          "details": "User enumeration possible (6 users)",
+          "priority_score": 92,
+          "remediation": "Disable user enumeration via REST API",
+          "id": 2
+        },
+        {
+          "type": "DIRECTORY_LISTING",
+          "category": "HIGH",
+          "risk": "high",
+          "details": "Directory listing in 3 locations",
+          "priority_score": 88,
+          "remediation": "Add Options -Indexes to .htaccess",
+          "id": 3
+        },
+        {
+          "type": "REST_API_EXPOSED",
+          "category": "MEDIUM",
+          "risk": "medium",
+          "details": "REST API exposing: users, posts",
+          "priority_score": 72,
+          "remediation": "Implement authentication for sensitive endpoints",
+          "id": 4
+        }
+      ],
+      "timestamp": "2026-01-21T11:12:19.511107",
+      "scan_id": "6c76e37e"
+    }
+  ]
+}

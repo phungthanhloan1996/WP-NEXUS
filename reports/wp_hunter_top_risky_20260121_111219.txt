@@ -1,0 +1,15 @@
+================================================================================
+TOP 15 MOST RISKY WORDPRESS SITES
+================================================================================
+
+ 1. https://wordpress.org
+    Risk Score: 100.0 (critical)
+    Worst Scenario: RCE
+    WP Detection Vectors: 5
+    Confidence: 100%
+    Top Findings:
+      1. Exposed sensitive file: /wp-config.php
+      2. User enumeration possible (6 users)
+      3. Directory listing in 3 locations
+    Weaknesses Found: 8
+

@@ -1,0 +1,5 @@
+=== SCAN STATISTICS ===
+
+Total Sites Processed: 2
+WordPress Sites Found: 0 (0.0%)
+High Risk Sites (>60): 0

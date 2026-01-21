@@ -1,0 +1,2 @@
+URL,Is_WP,WP_Confidence,WP_Vectors,Overall_Risk,Risk_Level,Worst_Scenario,XMLRPC_Active,User_Enum,Exposed_Files,Dir_Listing,Plugins_Detected,Critical_Findings,Correlation_Score
+"https://wordpress.org",TRUE,100,5,100,critical,RCE,0,1,1,1,1,1,95

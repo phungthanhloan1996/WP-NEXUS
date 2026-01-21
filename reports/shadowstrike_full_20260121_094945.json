@@ -1,0 +1,272 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-21T09:49:45.958915",
+    "total_sites": 2,
+    "engine_version": "ShadowStrike V15.1 - Multi-Phase Architecture",
+    "phases_completed": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6"
+    ]
+  },
+  "results": [
+    {
+      "original_domain": "example.com",
+      "normalized_url": "https://example.com",
+      "liveness_check": {
+        "domain": "example.com",
+        "normalized": "example.com",
+        "alive": true,
+        "protocol": "https",
+        "final_url": "https://example.com/",
+        "status_code": 200,
+        "response_time": 0.10151934623718262,
+        "error": null,
+        "redirect_chain": []
+      },
+      "wp_detection": {
+        "is_wordpress": true,
+        "confidence": 90,
+        "vectors": [
+          "DIRECT_ENDPOINT"
+        ],
+        "findings": [
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/?rest_route=/",
+            "status": 200,
+            "confidence": 90
+          }
+        ],
+        "base_url": "https://example.com",
+        "timestamp": "2026-01-21T09:49:29.254145"
+      },
+      "surface_mapping": {
+        "plugins": [],
+        "api_surface": {
+          "rest_endpoints": [],
+          "xmlrpc_methods": [],
+          "ajax_actions": [],
+          "other_endpoints": []
+        },
+        "exposed_files": [],
+        "directory_listing": []
+      },
+      "correlation_analysis": {
+        "weakness_flags": [],
+        "detected_patterns": [],
+        "correlation_multiplier": 1.0,
+        "correlation_score": 0
+      },
+      "risk_analysis": {
+        "overall_risk": 0,
+        "worst_scenario": null,
+        "worst_scenario_risk": 0,
+        "scenario_breakdown": [
+          {
+            "scenario": "RCE",
+            "name": "Remote Code Execution",
+            "risk_score": 0.0,
+            "indicator_score": 0.0,
+            "present_indicators": []
+          },
+          {
+            "scenario": "DATA_EXFILTRATION",
+            "name": "Data Exfiltration",
+            "risk_score": 0.0,
+            "indicator_score": 0.0,
+            "present_indicators": []
+          },
+          {
+            "scenario": "AUTH_BYPASS",
+            "name": "Authentication Bypass",
+            "risk_score": 0.0,
+            "indicator_score": 0.0,
+            "present_indicators": []
+          },
+          {
+            "scenario": "DOS",
+            "name": "Denial of Service",
+            "risk_score": 0.0,
+            "indicator_score": 0.0,
+            "present_indicators": []
+          },
+          {
+            "scenario": "INFO_DISCLOSURE",
+            "name": "Information Disclosure",
+            "risk_score": 0.0,
+            "indicator_score": 0.0,
+            "present_indicators": []
+          }
+        ],
+        "scenario_count": 0
+      },
+      "prioritized_findings": [],
+      "timestamp": "2026-01-21T09:49:30.160511",
+      "processing_time": 1768963770.1605535
+    },
+    {
+      "original_domain": "wordpress.org",
+      "normalized_url": "https://wordpress.org",
+      "liveness_check": {
+        "domain": "wordpress.org",
+        "normalized": "wordpress.org",
+        "alive": true,
+        "protocol": "https",
+        "final_url": "https://wordpress.org/",
+        "status_code": 200,
+        "response_time": 0.7723143100738525,
+        "error": null,
+        "redirect_chain": []
+      },
+      "wp_detection": {
+        "is_wordpress": true,
+        "confidence": 95,
+        "vectors": [
+          "XMLRPC_BEHAVIOR",
+          "DIRECT_ENDPOINT",
+          "HTTP_HEADERS"
+        ],
+        "findings": [
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/wp-login.php",
+            "status": 301,
+            "confidence": 90
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/wp-admin/",
+            "status": 302,
+            "confidence": 90
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/wp-json/",
+            "status": 200,
+            "confidence": 90
+          },
+          {
+            "vector": "DIRECT_ENDPOINT",
+            "endpoint": "/?rest_route=/",
+            "status": 200,
+            "confidence": 90
+          },
+          {
+            "vector": "XMLRPC_BEHAVIOR",
+            "details": "XML-RPC responds to system.listMethods",
+            "confidence": 95
+          },
+          {
+            "vector": "HTTP_HEADERS",
+            "details": "WP-specific headers found",
+            "confidence": 75
+          }
+        ],
+        "base_url": "https://wordpress.org",
+        "timestamp": "2026-01-21T09:49:35.097830"
+      },
+      "surface_mapping": {
+        "plugins": [
+          {
+            "name": "gutenberg",
+            "version": "22.3.0",
+            "version_exposed": true,
+            "readme_exposed": true,
+            "changelog_exposed": false,
+            "vulnerable_patterns": [],
+            "risk_level": "medium"
+          }
+        ],
+        "api_surface": {
+          "rest_endpoints": [
+            "/wp-json/wp/v2/"
+          ],
+          "xmlrpc_methods": [],
+          "ajax_actions": [],
+          "other_endpoints": []
+        },
+        "exposed_files": [
+          {
+            "path": "/wp-config.php",
+            "status": 200,
+            "risk": "high"
+          }
+        ],
+        "directory_listing": []
+      },
+      "correlation_analysis": {
+        "weakness_flags": [
+          "version_exposed",
+          "config_exposed"
+        ],
+        "detected_patterns": [],
+        "correlation_multiplier": 1.0,
+        "correlation_score": 0
+      },
+      "risk_analysis": {
+        "overall_risk": 22.5,
+        "worst_scenario": "RCE",
+        "worst_scenario_risk": 22.5,
+        "scenario_breakdown": [
+          {
+            "scenario": "RCE",
+            "name": "Remote Code Execution",
+            "risk_score": 22.5,
+            "indicator_score": 16.7,
+            "present_indicators": [
+              "version_exposed"
+            ]
+          },
+          {
+            "scenario": "DATA_EXFILTRATION",
+            "name": "Data Exfiltration",
+            "risk_score": 15.2,
+            "indicator_score": 16.7,
+            "present_indicators": [
+              "config_exposed"
+            ]
+          },
+          {
+            "scenario": "AUTH_BYPASS",
+            "name": "Authentication Bypass",
+            "risk_score": 0.0,
+            "indicator_score": 0.0,
+            "present_indicators": []
+          },
+          {
+            "scenario": "DOS",
+            "name": "Denial of Service",
+            "risk_score": 0.0,
+            "indicator_score": 0.0,
+            "present_indicators": []
+          },
+          {
+            "scenario": "INFO_DISCLOSURE",
+            "name": "Information Disclosure",
+            "risk_score": 8.0,
+            "indicator_score": 20.0,
+            "present_indicators": [
+              "version_exposed"
+            ]
+          }
+        ],
+        "scenario_count": 0
+      },
+      "prioritized_findings": [
+        {
+          "type": "EXPOSED_FILE",
+          "risk": "critical",
+          "details": "Exposed sensitive file: /wp-config.php",
+          "priority_score": 100
+        }
+      ],
+      "timestamp": "2026-01-21T09:49:45.957869",
+      "processing_time": 1768963785.957888
+    }
+  ]
+}
