@@ -15,6 +15,8 @@ import threading
 from collections import defaultdict
 import warnings
 import sys
+from bs4 import BeautifulSoup 
+import re
 
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
@@ -368,38 +370,102 @@ class WordPressReconEnhanced:
             else:
                 self.results['server']['webserver'] = server_header
         
-        # PHP version
+        # PHP version - CẢI THIỆN
+        php_found = False
+        
+        # Method 1: X-Powered-By header
         php_header = headers.get('X-Powered-By', '')
         if 'PHP' in php_header:
             match = re.search(r'PHP/([\d.]+)', php_header)
             if match:
                 self.results['server']['php'] = match.group(1)
                 self.results['server']['php_source'] = 'header'
-        else:
-            # Thử tìm trong HTML
+                php_found = True
+        
+        # Method 2: X-PHP-Version header (một số host dùng)
+        if not php_found:
+            php_version_header = headers.get('X-PHP-Version', '')
+            if php_version_header:
+                self.results['server']['php'] = php_version_header
+                self.results['server']['php_source'] = 'x_php_version'
+                php_found = True
+        
+        # Method 3: Tìm trong HTML
+        if not php_found:
             html = response.text
-            php_match = re.search(r'PHP/([\d.]+)', html)
-            if php_match:
-                self.results['server']['php'] = php_match.group(1)
-                self.results['server']['php_source'] = 'html'
+            # Tìm PHP version trong HTML (thường trong comment hoặc generator)
+            php_patterns = [
+                r'PHP/([\d.]+)',
+                r'PHP Version: ([\d.]+)',
+                r'php/([\d.]+)',
+                r'PHP ([\d.]+)',
+            ]
+            
+            for pattern in php_patterns:
+                php_match = re.search(pattern, html, re.IGNORECASE)
+                if php_match:
+                    self.results['server']['php'] = php_match.group(1)
+                    self.results['server']['php_source'] = 'html'
+                    php_found = True
+                    break
+        
+        # Method 4: Kiểm tra headers khác
+        if not php_found:
+            # Kiểm tra tất cả headers
+            for header_name, header_value in headers.items():
+                if 'php' in header_name.lower():
+                    match = re.search(r'([\d.]+)', header_value)
+                    if match:
+                        self.results['server']['php'] = match.group(1)
+                        self.results['server']['php_source'] = f'header_{header_name}'
+                        php_found = True
+                        break
     
     def _detect_wp_version_enhanced(self):
         """Phát hiện WordPress version với nhiều phương pháp"""
         version_sources = []
         detected_version = ""
         
-        # 1. Từ meta generator (độ chính xác cao nhất)
-        response = self._make_request(self.base_url)
-        if response:
-            html = response.text
-            meta_match = re.search(r'content=["\']WordPress ([\d.]+)["\']', html)
-            if meta_match:
-                detected_version = meta_match.group(1)
-                version_sources.append(('meta', detected_version))
-                self.results['wp']['version'] = detected_version
-                self.results['wp']['version_source'] = 'meta'
+        # 0. Kiểm tra bằng API wp-json (phương pháp mới)
+        try:
+            api_resp = self._make_request(f"{self.base_url}/wp-json/wp/v2/")
+            if api_resp and api_resp.status_code == 200:
+                # Lấy version từ headers của wp-json
+                for header_name, header_value in api_resp.headers.items():
+                    if 'wp' in header_name.lower() or 'wordpress' in header_name.lower():
+                        match = re.search(r'([\d.]+)', header_value)
+                        if match:
+                            detected_version = match.group(1)
+                            version_sources.append(('wp_json_header', detected_version))
+                            break
+        except:
+            pass
         
-        # 2. Từ CSS version (style.min.css)
+        # 1. Từ meta generator (độ chính xác cao nhất)
+        if not detected_version:
+            response = self._make_request(self.base_url)
+            if response:
+                html = response.text
+                meta_match = re.search(r'content=["\']WordPress ([\d.]+)["\']', html)
+                if meta_match:
+                    detected_version = meta_match.group(1)
+                    version_sources.append(('meta', detected_version))
+        
+        # 2. Tìm trong script tags
+        if not detected_version and response:
+            script_match = re.search(r'wp-embed\.js\?ver=([\d.]+)', html)
+            if script_match:
+                detected_version = script_match.group(1)
+                version_sources.append(('script_ver', detected_version))
+        
+        # 3. Tìm trong comment HTML
+        if not detected_version and response:
+            comment_match = re.search(r'WordPress ([\d.]+)', html)
+            if comment_match:
+                detected_version = comment_match.group(1)
+                version_sources.append(('html_comment', detected_version))
+        
+        # 4. Từ CSS version (style.min.css)
         if not detected_version:
             css_urls = [
                 f"{self.base_url}/wp-includes/css/dist/block-library/style.min.css",
@@ -416,11 +482,9 @@ class WordPressReconEnhanced:
                         if match:
                             detected_version = match.group(1)
                             version_sources.append(('css_url', detected_version))
-                            self.results['wp']['version'] = detected_version
-                            self.results['wp']['version_source'] = 'css_url'
                             break
         
-        # 3. Từ RSS feed
+        # 5. Từ RSS feed
         if not detected_version:
             rss_resp = self._make_request(f"{self.base_url}/feed/")
             if rss_resp and rss_resp.status_code == 200:
@@ -428,10 +492,8 @@ class WordPressReconEnhanced:
                 if match:
                     detected_version = match.group(1)
                     version_sources.append(('rss', detected_version))
-                    self.results['wp']['version'] = detected_version
-                    self.results['wp']['version_source'] = 'rss'
         
-        # 4. Từ readme.html
+        # 6. Từ readme.html
         if not detected_version:
             readme_resp = self._make_request(f"{self.base_url}/readme.html")
             if readme_resp and readme_resp.status_code == 200:
@@ -439,26 +501,30 @@ class WordPressReconEnhanced:
                 if match:
                     detected_version = match.group(1)
                     version_sources.append(('readme', detected_version))
-                    self.results['wp']['version'] = detected_version
-                    self.results['wp']['version_source'] = 'readme'
         
         # Lưu tất cả sources
         if version_sources:
+            self.results['wp']['version'] = detected_version
+            self.results['wp']['version_source'] = version_sources[0][0] if version_sources else 'unknown'
             self.results['wp']['version_sources'] = [
                 f"{src[0]}:{src[1]}" for src in version_sources
             ]
-            
-            # Kiểm tra version cũ
-            try:
-                if detected_version:
-                    major = int(detected_version.split('.')[0])
-                    if major < 6:
-                        self.results['vulnerability_indicators']['outdated_wp'] = True
-                        self.results['vulnerability_indicators']['potential_issues'].append(
-                            f"outdated_wp:{detected_version}"
-                        )
-            except:
-                pass
+        else:
+            self.results['wp']['version'] = ""
+            self.results['wp']['version_source'] = "not_found"
+            self.results['wp']['version_sources'] = []
+        
+        # Kiểm tra version cũ
+        try:
+            if detected_version:
+                major = int(detected_version.split('.')[0])
+                if major < 6:
+                    self.results['vulnerability_indicators']['outdated_wp'] = True
+                    self.results['vulnerability_indicators']['potential_issues'].append(
+                        f"outdated_wp:{detected_version}"
+                    )
+        except:
+            pass
     
     def _detect_theme_enhanced(self):
         """Phát hiện theme với version chính xác"""
@@ -505,18 +571,9 @@ class WordPressReconEnhanced:
         """
         Phát hiện plugin WordPress + version (clean, scalable, CVE-ready)
         """
-        # Import tại đây để tránh lỗi nếu không có module
-        try:
-            from plugin_version import detect_plugin_version
-        except ImportError:
-            # Fallback nếu không có module plugin_version
-            def detect_plugin_version(base_url, plugin_slug):
-                return {"detected": False, "version": None, "source": None, "confidence": "low"}
-        
         plugins_found = []
         popular_count = 0
         categories = defaultdict(int)
-
         scanned_slugs = set()
 
         # 1️⃣ Detect plugin từ HTML (passive)
@@ -524,14 +581,15 @@ class WordPressReconEnhanced:
         if response:
             html = response.text
             html_slugs = set(re.findall(r'/wp-content/plugins/([^/]+)/', html))
-            scanned_slugs.update(list(html_slugs)[:20])  # giới hạn
+            scanned_slugs.update(list(html_slugs)[:30])  # Tăng giới hạn
 
         # 2️⃣ Chủ động probe plugin phổ biến (active)
-        for slug in list(POPULAR_PLUGINS.keys())[:15]:
+        for slug in list(POPULAR_PLUGINS.keys())[:20]:  # Tăng số plugin phổ biến
             scanned_slugs.add(slug)
 
         # 3️⃣ Scan từng plugin
         for plugin_slug in scanned_slugs:
+            # Tạo plugin data structure
             plugin_data = {
                 "slug": plugin_slug,
                 "detected": False,
@@ -550,38 +608,141 @@ class WordPressReconEnhanced:
                 plugin_data["popular_info"] = POPULAR_PLUGINS[plugin_key]
                 plugin_data["category"] = POPULAR_PLUGINS[plugin_key]["category"]
 
-            # 4️⃣ Lấy version bằng module chuẩn
-            try:
-                version_info = detect_plugin_version(self.base_url, plugin_slug)
-            except Exception:
-                version_info = {"detected": False}
+            # 4️⃣ Kiểm tra plugin có tồn tại không (bằng cách thử truy cập readme.txt hoặc .php)
+            plugin_exists = False
+            
+            # Kiểm tra readme.txt
+            readme_url = f"{self.base_url}/wp-content/plugins/{plugin_slug}/readme.txt"
+            readme_resp = self._make_request(readme_url, timeout=5)
+            
+            # Kiểm tra main php file
+            php_url = f"{self.base_url}/wp-content/plugins/{plugin_slug}/{plugin_slug}.php"
+            php_resp = self._make_request(php_url, timeout=5)
+            
+            if (readme_resp and readme_resp.status_code == 200) or \
+               (php_resp and php_resp.status_code == 200):
+                plugin_exists = True
+                plugin_data["detected"] = True
+                
+                # 5️⃣ Cố gắng lấy version nếu plugin tồn tại
+                version_info = self._detect_plugin_version(plugin_slug)
+                
+                if version_info.get("detected", False):
+                    plugin_data["version"] = version_info.get("version")
+                    plugin_data["version_source"] = version_info.get("source")
+                    plugin_data["confidence"] = version_info.get("confidence", "low")
+            
+            # 6️⃣ Thêm vào danh sách nếu plugin tồn tại
+            if plugin_exists:
+                plugins_found.append(plugin_data)
+                
+                # Thống kê
+                if plugin_data["popular"]:
+                    popular_count += 1
+                    categories[plugin_data["category"]] += 1
 
-            if not version_info["detected"]:
-                continue  # plugin không tồn tại thật
-
-            plugin_data["detected"] = True
-            plugin_data["version"] = version_info.get("version")
-            plugin_data["version_source"] = version_info.get("source")
-            plugin_data["confidence"] = version_info.get("confidence", "low")
-
-            plugins_found.append(plugin_data)
-
-            # Thống kê
-            if plugin_data["popular"]:
-                popular_count += 1
-                categories[plugin_data["category"]] += 1
-
-        # 5️⃣ Update results
+        # 7️⃣ Update results
         self.results["plugins"] = plugins_found
         self.results["plugin_analysis"]["popular_plugins_found"] = popular_count
         self.results["plugin_analysis"]["categories"] = dict(categories)
 
-        # 6️⃣ Plugin combination analysis
+        # 8️⃣ Plugin combination analysis
         popular_slugs = [p["slug"] for p in plugins_found if p["popular"]]
         if len(popular_slugs) >= 2:
             self.results["plugin_analysis"]["plugin_combinations"] = \
                 self._find_common_combinations(popular_slugs)
     
+
+
+    def _detect_plugin_version(self, plugin_slug):
+        """Detect plugin version không cần module ngoài"""
+        base_url = self.base_url
+        
+        # 1. Kiểm tra readme.txt (cách đáng tin cậy nhất)
+        readme_url = f"{base_url}/wp-content/plugins/{plugin_slug}/readme.txt"
+        response = self._make_request(readme_url)
+        
+        if response and response.status_code == 200:
+            content = response.text
+            # Tìm Stable tag trong readme.txt
+            version_match = re.search(r'Stable tag:\s*([\d.]+)', content, re.IGNORECASE)
+            if version_match:
+                return {
+                    "detected": True,
+                    "version": version_match.group(1).strip(),
+                    "source": "readme.txt",
+                    "confidence": "high"
+                }
+        
+        # 2. Kiểm tra file PHP chính (thường là [slug].php hoặc [slug].php)
+        php_files = [
+            f"{base_url}/wp-content/plugins/{plugin_slug}/{plugin_slug}.php",
+            f"{base_url}/wp-content/plugins/{plugin_slug}/plugin.php",
+            f"{base_url}/wp-content/plugins/{plugin_slug}/main.php",
+        ]
+        
+        for php_url in php_files:
+            response = self._make_request(php_url)
+            if response and response.status_code == 200:
+                content = response.text[:5000]  # Chỉ đọc đầu file
+                # Tìm Version trong comment PHP
+                version_match = re.search(r'Version:\s*([\d.]+)', content, re.IGNORECASE)
+                if version_match:
+                    return {
+                        "detected": True,
+                        "version": version_match.group(1).strip(),
+                        "source": "php_header",
+                        "confidence": "medium"
+                    }
+        
+        # 3. Kiểm tra trong CSS/JS files (tìm ver= parameter)
+        asset_urls = [
+            f"{base_url}/wp-content/plugins/{plugin_slug}/assets/",
+            f"{base_url}/wp-content/plugins/{plugin_slug}/css/",
+            f"{base_url}/wp-content/plugins/{plugin_slug}/js/",
+        ]
+        
+        for asset_url in asset_urls:
+            response = self._make_request(asset_url, timeout=5)
+            if response and response.status_code == 200:
+                # Tìm version trong URL
+                version_match = re.search(r'ver=([\d.]+)', response.text)
+                if version_match:
+                    return {
+                        "detected": True,
+                        "version": version_match.group(1),
+                        "source": "asset_param",
+                        "confidence": "low"
+                    }
+        
+        # 4. Kiểm tra changelog.txt
+        changelog_url = f"{base_url}/wp-content/plugins/{plugin_slug}/changelog.txt"
+        response = self._make_request(changelog_url)
+        if response and response.status_code == 200:
+            content = response.text
+            # Tìm version đầu tiên trong changelog
+            version_match = re.search(r'=\s*([\d.]+)\s*=', content)
+            if version_match:
+                return {
+                    "detected": True,
+                    "version": version_match.group(1).strip(),
+                    "source": "changelog",
+                    "confidence": "medium"
+                }
+        
+        # Không tìm thấy version
+        return {
+            "detected": False,
+            "version": None,
+            "source": None,
+            "confidence": "low"
+        }
+
+
+
+
+
+
     def _check_cve_vulnerabilities(self):
         """Kiểm tra CVE dựa trên version"""
         cve_matches = []
@@ -879,7 +1040,7 @@ class WordPressReconEnhanced:
         
         return self.results
     
-    def get_summary(self):
+    def get_summary(self, show_all=False):
         """Trả về summary ngắn gọn để hiển thị"""
         if not self.results['wp']['detected']:
             return None
@@ -895,27 +1056,60 @@ class WordPressReconEnhanced:
             'server': self.results['server']['webserver'] or 'Unknown',
             'server_full': self.results['server']['server_full'] or 'Unknown',
             'php': self.results['server']['php'] or 'Unknown',
+            'php_source': self.results['server']['php_source'] or 'Unknown',
             'xmlrpc': self.results['endpoints']['xmlrpc'],
             'xmlrpc_status': self.results['endpoints']['xmlrpc_status'],
             'rest_api': self.results['endpoints']['rest_api'],
             'rest_status': self.results['endpoints']['rest_api_status'],
+            'rest_endpoints_count': len(self.results['endpoints']['rest_api_endpoints']),
+            'wp_login': self.results['endpoints']['wp_login'],
+            'wp_admin': self.results['endpoints']['wp_admin'],
             'upload_listing': self.results['endpoints']['upload_dir_listing'],
             'upload_status': self.results['endpoints']['upload_status'],
             'waf': self.results['security_indicators']['waf_detected'] or 'None',
             'waf_type': self.results['security_indicators']['waf_type'] or '',
+            'directory_listing': self.results['security_indicators']['directory_listing'],
+            'sensitive_files_count': len(self.results['security_indicators']['sensitive_files']),
+            'user_enumeration': self.results['security_indicators']['user_enumeration'],
+            'xmlrpc_enabled': self.results['security_indicators']['xmlrpc_enabled'],
+            'outdated_wp': self.results['vulnerability_indicators']['outdated_wp'],
+            'outdated_php': self.results['vulnerability_indicators']['outdated_php'],
             'plugins_count': len(self.results['plugins']),
             'popular_plugins': self.results['plugin_analysis']['popular_plugins_found'],
             'categories': dict(self.results['plugin_analysis']['categories']),
+            'plugin_combinations': self.results['plugin_analysis']['plugin_combinations'],
             'cve_count': len(self.results['vulnerability_indicators']['cve_matches']),
+            'cve_matches': self.results['vulnerability_indicators']['cve_matches'],
             'risk_score': self.results['vulnerability_indicators']['risk_score'],
+            'potential_issues': self.results['vulnerability_indicators']['potential_issues'],
             'vulnerability_indicators': len(self.results['vulnerability_indicators']['potential_issues']),
             'security_issues': sum([
                 1 if self.results['security_indicators']['directory_listing'] else 0,
                 1 if self.results['security_indicators']['xmlrpc_enabled'] else 0,
                 1 if self.results['security_indicators']['user_enumeration'] else 0,
                 len(self.results['security_indicators']['sensitive_files'])
-            ])
+            ]),
+            'detected_plugins': [],  # Thêm danh sách plugin
+            'popular_plugin_details': []  # Thêm chi tiết plugin phổ biến
         }
+        
+        # Thêm danh sách plugin phát hiện được
+        for plugin in self.results['plugins']:
+            if plugin.get('detected'):
+                plugin_info = {
+                    'slug': plugin.get('slug'),
+                    'version': plugin.get('version'),
+                    'category': plugin.get('category'),
+                    'popular': plugin.get('popular')
+                }
+                summary['detected_plugins'].append(plugin_info)
+                
+                if plugin.get('popular'):
+                    summary['popular_plugin_details'].append({
+                        'name': plugin.get('slug'),
+                        'version': plugin.get('version'),
+                        'category': plugin.get('category')
+                    })
         
         # Thêm top plugin categories
         if summary['categories']:
@@ -928,7 +1122,7 @@ def extract_domain(url):
     """Trích xuất domain từ URL"""
     try:
         parsed = urlparse(url)
-        domain = parsed.netloc.lower().replace("www.", "")
+        domain = parsed.netloc.lower().replace()
         if re.match(r'^[a-z0-9][a-z00-9.-]*\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn|info\.vn|biz\.vn)$', domain):
             return domain
         return None
@@ -995,6 +1189,39 @@ def collect_wp_domains_parallel():
             sys.stdout.write(status_line)
             sys.stdout.flush()
     
+    def collect_from_rapiddns(domain_keyword):
+        """Lấy domain từ RapidDNS.io"""
+        domains = set()
+        try:
+            url = f"https://rapiddns.io/subdomain/{domain_keyword}?full=1"
+            resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code == 200:
+                # Regex tìm domain .vn
+                matches = re.findall(r'<td>([a-zA-Z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn))</td>', resp.text)
+                for match in matches:  # ĐÃ SỬA: match là string, không phải tuple
+                    domain = match.lower().replace("www.", "")  # Sửa: match thay vì match[0]
+                    if re.match(r'^[a-z0-9][a-z0-9.-]*\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn)$', domain):
+                        domains.add(domain)
+        except Exception as e:
+            print(f"  [!] RapidDNS error: {e}")
+        return domains
+
+    def collect_from_dnsdumpster(domain_keyword):
+        """Lấy domain từ DNSDumpster.com"""
+        domains = set()
+        try:
+            # DNSDumpster cần CSRF token, đơn giản hóa: chỉ lấy từ cached page
+            url = f"https://dnsdumpster.com/"
+            # Gửi POST request với domain (cần xử lý token thực tế)
+            # Tạm thời skip phần phức tạp, chỉ demo cấu trúc
+            pass
+        except Exception as e:
+            print(f"  [!] DNSDumpster error: {e}")
+        return domains
+
+
+
+
     def process_dork(dork_idx, dork):
         nonlocal processed_dorks, new_domains_queue, progress_data
         
@@ -1002,7 +1229,54 @@ def collect_wp_domains_parallel():
             return dork_idx, 0, dork
         
         try:
-            progress_data['current_status'] = f"Dork: {dork[:40]}..."
+            local_new_domains = []
+            
+            # PHẦN 1: XỬ LÝ DOMAIN KEYWORD (cho RapidDNS)
+            # Nếu dork là domain đơn (ví dụ: example.vn, target.com.vn)
+            if "site:" not in dork and re.match(r'^[a-z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn)$', dork.lower()):
+                progress_data['current_status'] = f"RapidDNS: {dork[:30]}..."
+                update_progress_display()
+                
+                # Lấy domain từ RapidDNS
+                try:
+                    rapiddns_url = f"https://rapiddns.io/subdomain/{dork}?full=1"
+                    
+                    resp = requests.get(
+                        rapiddns_url, 
+                        headers=HEADERS,  # Sử dụng HEADERS có sẵn
+                        timeout=15, 
+                        verify=False
+                    )
+                    
+                    if resp.status_code == 200:
+                        # Cách đơn giản hơn: dùng regex trực tiếp
+                        domains_found = re.findall(
+                            r'<td>([a-zA-Z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn))</td>',
+                            resp.text
+                        )
+                        
+                        for raw_domain in domains_found:
+                            domain = raw_domain.lower().replace("www.", "")
+                            # Kiểm tra domain hợp lệ bằng hàm extract_domain có sẵn
+                            if extract_domain(f"http://{domain}"):
+                                with lock:
+                                    if domain not in all_domains:
+                                        all_domains.add(domain)
+                                        local_new_domains.append(domain)
+                                        new_domains_queue.append(domain)
+                                        progress_data['total_targets'] += 1
+                        
+                        if domains_found:
+                            print(f"\r\033[K  [+] RapidDNS: {len(domains_found)} subdomains cho {dork}")
+                    
+                    # Delay để tránh bị block
+                    time.sleep(random.uniform(1.0, 2.0))
+                    
+                except Exception as e:
+                    print(f"\r\033[K  [!] RapidDNS error for {dork}: {str(e)[:50]}")
+            
+            # PHẦN 2: XỬ LÝ DUCKDUCKGO (giữ nguyên)
+            progress_data['current_status'] = f"DuckDuckGo: {dork[:40]}..."
             update_progress_display()
             
             with DDGS() as ddgs:
@@ -1013,7 +1287,6 @@ def collect_wp_domains_parallel():
                     max_results=NUM_RESULTS_PER_DORK
                 )
                 
-                local_new_domains = []
                 for result in results:
                     if stop_flag:
                         break
@@ -1034,6 +1307,7 @@ def collect_wp_domains_parallel():
             
             update_progress_display()
             return dork_idx, len(local_new_domains), dork
+        
             
         except Exception as e:
             with lock:
@@ -1088,155 +1362,290 @@ def collect_wp_domains_parallel():
                             risk_color = "\033[92m"  # Green
                             risk_level = "LOW"
                         
-                        # Hiển thị thông tin chi tiết
-                        print(f"{risk_color}{'='*80}\033[0m")
-                        print(f"{risk_color}⚠️  VULNERABLE DOMAIN DETECTED: {domain}\033[0m")
-                        print(f"{risk_color}┌─{'─'*78}┐\033[0m")
+                        # ========================================================
+                        # HIỂN THỊ ĐẦY ĐỦ THÔNG TIN
+                        # ========================================================
                         
-                        # Basic Info
-                        print(f"{risk_color}│\033[0m \033[1mBasic Information:\033[0m")
-                        print(f"{risk_color}│\033[0m   • WP Version: {summary['wp_version']} | Confidence: {summary['wp_confidence']}%")
-                        print(f"{risk_color}│\033[0m   • Theme: {summary['theme']} v{summary['theme_version']}")
-                        print(f"{risk_color}│\033[0m   • Server: {summary['server']} | PHP: {summary['php']}")
+                        print(f"{risk_color}{'='*100}\033[0m")
+                        print(f"{risk_color}📍 WORDPRESS SECURITY REPORT: {domain}\033[0m")
+                        print(f"{risk_color}{'='*100}\033[0m")
                         
-                        # Security Status
-                        print(f"{risk_color}│\033[0m \033[1mSecurity Status:\033[0m")
-                        print(f"{risk_color}│\033[0m   • XML-RPC: {'✅ Enabled' if summary['xmlrpc'] else '❌ Disabled'} "
-                              f"(Status: {summary['xmlrpc_status']})")
-                        print(f"{risk_color}│\033[0m   • REST API: {'✅ Enabled' if summary['rest_api'] else '❌ Disabled'} "
-                              f"(Status: {summary['rest_status']})")
-                        print(f"{risk_color}│\033[0m   • Upload Listing: {'⚠️  Enabled' if summary['upload_listing'] else '✅ Disabled'} "
-                              f"(Status: {summary['upload_status']})")
-                        print(f"{risk_color}│\033[0m   • WAF: {summary['waf']} ({summary['waf_type']})")
+                        # 1. BASIC INFORMATION
+                        print(f"\n\033[1m📋 BASIC INFORMATION\033[0m")
+                        print(f"{'-'*90}")
+                        print(f"  • WordPress Detected: {'✅ YES' if summary['wp_detected'] else '❌ NO'}")
+                        print(f"  • Confidence Level: {summary['wp_confidence']}%")
+                        print(f"  • WordPress Version: {summary['wp_version']}")
+                        if summary.get('outdated_wp', False):
+                            print(f"  • WordPress Status: ⚠️  OUTDATED")
                         
-                        # Vulnerabilities
-                        print(f"{risk_color}│\033[0m \033[1mVulnerability Assessment:\033[0m")
-                        print(f"{risk_color}│\033[0m   • Risk Score: {risk_score}/100 \033[1m[{risk_level}]\033[0m")
-                        print(f"{risk_color}│\033[0m   • CVE Matches: {summary['cve_count']}")
-                        print(f"{risk_color}│\033[0m   • Security Issues: {summary['security_issues']}")
-                        print(f"{risk_color}│\033[0m   • Total Indicators: {total_issues}")
+                        print(f"  • Theme: {summary['theme']} v{summary['theme_version']}")
                         
-                        # Plugins
-                        if summary['plugins_count'] > 0:
-                            print(f"{risk_color}│\033[0m \033[1mPlugin Analysis:\033[0m")
-                            print(f"{riskColor}│\033[0m   • Total Plugins: {summary['plugins_count']}")
-                            print(f"{risk_color}│\033[0m   • Popular Plugins: {summary['popular_plugins']}")
-                            if summary.get('top_categories'):
-                                print(f"{risk_color}│\033[0m   • Top Categories: {', '.join(summary['top_categories'])}")
+                        # 2. SERVER INFORMATION
+                        print(f"\n\033[1m🖥️  SERVER INFORMATION\033[0m")
+                        print(f"{'-'*90}")
+                        print(f"  • Web Server: {summary['server']}")
+                        if summary.get('server_full'):
+                            print(f"  • Server Header: {summary['server_full']}")
                         
-                        print(f"{risk_color}└─{'─'*78}┘\033[0m")
-                        print(f"{risk_color}{'='*80}\033[0m\n")
+                        print(f"  • PHP Version: {summary['php']}")
+                        if summary.get('outdated_php', False):
+                            print(f"  • PHP Status: ⚠️  OUTDATED")
                         
-                        # Ghi domain yếu vào file
+                        # 3. PLUGIN ANALYSIS (CHI TIẾT)
+                        print(f"\n\033[1m🔌 PLUGIN ANALYSIS\033[0m")
+                        print(f"{'-'*90}")
+                        print(f"  • Total Plugins Detected: {summary['plugins_count']}")
+                        print(f"  • Popular Plugins Found: {summary['popular_plugins']}")
+                        
+                        # Hiển thị categories
+                        if summary['categories']:
+                            print(f"  • Plugin Categories: {', '.join([f'{k} ({v})' for k, v in summary['categories'].items()])}")
+                        
+
+
+
+
+                        # Hiển thị danh sách plugin PHỔ BIẾN đã phát hiện
+                        if 'plugins' in result and result['plugins']:
+                            # Lấy tất cả plugin đã phát hiện (không chỉ popular)
+                            detected_plugins = [p for p in result['plugins'] if p.get('detected')]
+                            
+                            if detected_plugins:
+                                print(f"\n  \033[1m📊 DETECTED PLUGINS:\033[0m")
+                                
+                                # Hiển thị popular plugins trước
+                                popular_plugins = [p for p in detected_plugins if p.get('popular')]
+                                if popular_plugins:
+                                    print(f"  \033[1m🔥 POPULAR PLUGINS:\033[0m")
+                                    for i, plugin in enumerate(popular_plugins[:10], 1):
+                                        name = plugin.get('slug', 'Unknown')[:30]
+                                        version = plugin.get('version', 'Unknown')
+                                        category = plugin.get('category', 'Unknown')
+                                        version_display = f"v{version}" if version else "No version"
+                                        print(f"    {i:2d}. {name:<30} {version_display:<15} [{category}]")
+                                
+                                # Hiển thị other plugins
+                                other_plugins = [p for p in detected_plugins if not p.get('popular')]
+                                if other_plugins:
+                                    print(f"  \033[1m📦 OTHER PLUGINS:\033[0m")
+                                    for i, plugin in enumerate(other_plugins[:5], 1):
+                                        name = plugin.get('slug', 'Unknown')[:30]
+                                        version = plugin.get('version', 'Unknown')
+                                        version_display = f"v{version}" if version else "No version"
+                                        print(f"    {i:2d}. {name:<30} {version_display}")
+                        
+
+
+
+
+
+
+
+                        # 4. ENDPOINTS & SECURITY
+                        print(f"\n\033[1m🔐 SECURITY ENDPOINTS\033[0m")
+                        print(f"{'-'*90}")
+                        
+                        # XML-RPC
+                        xmlrpc_status = "⚠️  ENABLED" if summary.get('xmlrpc_enabled', False) else "✅ DISABLED"
+                        print(f"  • XML-RPC: {xmlrpc_status} (Status: {summary['xmlrpc_status']})")
+                        
+                        # REST API
+                        rest_status = "✅ ENABLED" if summary['rest_api'] else "❌ DISABLED"
+                        print(f"  • REST API: {rest_status} (Status: {summary['rest_status']})")
+                        
+                        # Upload Directory
+                        upload_status = "⚠️  ENABLED" if summary['upload_listing'] else "✅ DISABLED"
+                        print(f"  • Upload Dir Listing: {upload_status} (Status: {summary['upload_status']})")
+                        
+                        # User Enumeration
+                        user_enum = "⚠️  POSSIBLE" if summary.get('user_enumeration', False) else "✅ NOT POSSIBLE"
+                        print(f"  • User Enumeration: {user_enum}")
+                        
+                        # WAF Detection
+                        waf_info = f"{summary['waf']} ({summary['waf_type']})" if summary['waf'] != 'None' else "Not Detected"
+                        print(f"  • WAF Detected: {waf_info}")
+                        
+                        # Sensitive Files
+                        sensitive_files = result['security_indicators'].get('sensitive_files', [])
+                        print(f"  • Sensitive Files Found: {len(sensitive_files)}")
+                        if sensitive_files:
+                            print(f"  \033[1m📁 SENSITIVE FILES:\033[0m")
+                            for file in sensitive_files[:5]:
+                                print(f"    - {file}")
+                        
+                        # 5. VULNERABILITY ASSESSMENT
+                        print(f"\n\033[1m⚠️  VULNERABILITY ASSESSMENT\033[0m")
+                        print(f"{'-'*90}")
+                        
+                        # Risk Score với màu
+                        print(f"  • Risk Score: {risk_color}{risk_score}/100 [{risk_level}]\033[0m")
+                        
+                        # CVE Matches
+                        print(f"  • CVE Matches Found: {summary['cve_count']}")
+                        cve_matches = result['vulnerability_indicators'].get('cve_matches', [])
+                        if cve_matches:
+                            print(f"  \033[1m🔴 CVE VULNERABILITIES:\033[0m")
+                            for i, cve in enumerate(cve_matches[:5], 1):
+                                cve_id = cve.get('cve', 'CVE-UNKNOWN')
+                                component = cve.get('component', 'Unknown')
+                                version = cve.get('version', 'Unknown')
+                                cve_type = cve.get('type', 'vulnerability').upper()
+                                print(f"    {i}. {cve_id} - {component} v{version} ({cve_type})")
+                        
+                        # Security Issues
+                        print(f"  • Security Issues: {summary['security_issues']}")
+                        print(f"  • Vulnerability Indicators: {summary['vulnerability_indicators']}")
+                        
+                        # Potential Issues
+                        potential_issues = result['vulnerability_indicators'].get('potential_issues', [])
+                        if potential_issues:
+                            print(f"  \033[1m🔍 POTENTIAL ISSUES:\033[0m")
+                            for issue in potential_issues[:5]:
+                                print(f"    - {issue}")
+                        
+                        # 6. PLUGIN COMBINATIONS
+                        plugin_combos = result['plugin_analysis'].get('plugin_combinations', [])
+                        if plugin_combos:
+                            print(f"\n\033[1m🎯 PLUGIN COMBINATIONS DETECTED\033[0m")
+                            print(f"{'-'*90}")
+                            for combo in plugin_combos:
+                                print(f"  • {combo}")
+                        
+                        # 7. SCAN METADATA
+                        print(f"\n\033[1m📊 SCAN METADATA\033[0m")
+                        print(f"{'-'*90}")
+                        print(f"  • Scan Duration: {result['scan_metadata']['duration']} seconds")
+                        print(f"  • Requests Made: {result['scan_metadata']['requests_made']}")
+                        print(f"  • Scan Status: {result['scan_metadata']['status'].upper()}")
+                        
+                        print(f"\n{risk_color}{'='*100}\033[0m\n")
+                        
+                        # ========================================================
+                        # GHI VÀO FILE VULN
+                        # ========================================================
                         with lock:
                             with open(DOMAIN_VULN_FILE, "a", encoding="utf-8") as f:
-                                f.write(f"{domain}|Risk:{risk_score}|"
-                                       f"WP:{summary['wp_version']}|PHP:{summary['php']}|"
-                                       f"Server:{summary['server']}|WAF:{summary['waf']}|"
-                                       f"XMLRPC:{summary['xmlrpc']}|REST:{summary['rest_api']}|"
+                                # Ghi thông tin chi tiết hơn
+                                plugin_list = []
+                                if 'plugins' in result:
+                                    plugin_list = [p.get('slug', '') for p in result['plugins'] if p.get('detected')]
+                                
+                                cve_list = []
+                                if cve_matches:
+                                    cve_list = [cve.get('cve', '') for cve in cve_matches]
+                                
+                                f.write(f"{domain}|"
+                                       f"Risk:{risk_score}|"
+                                       f"WP:{summary['wp_version']}|"
+                                       f"PHP:{summary['php']}|"
+                                       f"Server:{summary['server']}|"
+                                       f"WAF:{summary['waf']}|"
+                                       f"XMLRPC:{summary['xmlrpc']}|"
+                                       f"REST:{summary['rest_api']}|"
                                        f"Upload:{summary['upload_listing']}|"
-                                       f"CVE:{summary['cve_count']}|Plugins:{summary['plugins_count']}\n")
+                                       f"CVE:{','.join(cve_list[:3])}|"
+                                       f"Plugins:{summary['plugins_count']}|"
+                                       f"Popular:{summary['popular_plugins']}|"
+                                       f"Issues:{total_issues}\n")
                     else:
-                        # Hiển thị dòng status cho domain bình thường
+                        # Hiển thị dòng status cho domain bình thường (CLEAN)
                         print(f"\r\033[K\033[92m✓\033[0m {domain[:40]:<40} | "
                               f"WP:{summary['wp_version'][:8]:<8} | "
+                              f"Plugins:{summary['plugins_count']:<3} | "
                               f"Risk:{summary['risk_score']:<3} | "
                               f"✅ Clean")
+            else:
+                # Domain không phải WordPress
+                print(f"\r\033[K\033[90m✗\033[0m {domain[:40]:<40} | "
+                      f"Not WordPress | "
+                      f"Confidence: {result['wp']['confidence']}%")
         
         except Exception as e:
             # Hiển thị lỗi
-            print(f"\r\033[K\033[91m✗\033[0m {domain[:40]:<40} | Error: {str(e)[:30]}")
+            error_msg = str(e)
+            if "Connection" in error_msg or "timeout" in error_msg.lower():
+                print(f"\r\033[K\033[93m⚠\033[0m {domain[:40]:<40} | Connection Error")
+            else:
+                print(f"\r\033[K\033[91m✗\033[0m {domain[:40]:<40} | Error: {error_msg[:30]}")
+            
             with lock:
                 progress_data['scanned_targets'] += 1
         
         finally:
             update_progress_display()
+
+
+        # ============================================================
+    # THÊM PHẦN NÀY ĐỂ THỰC SỰ CHẠY CÁC HÀM CON
+    # ============================================================
     
-    print("\nInitializing scan...\n")
+    print(f"\n{'='*60}")
+    print("THỰC HIỆN THU THẬP DOMAIN...")
+    print(f"{'='*60}")
     
-    # Xử lý dorks song song
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS_DISCOVERY) as executor:
-        futures = {executor.submit(process_dork, idx, dork): (idx, dork) 
-                  for idx, dork in enumerate(DORKS, 1)}
-        
-        for future in as_completed(futures):
-            if stop_flag:
-                break
-                
-            dork_idx, domains_found, dork = future.result()
+    # 1. Chạy process_dork cho mỗi dork trong DORKS
+    try:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS_DISCOVERY) as executor:
+            futures = []
+            for dork_idx, dork in enumerate(DORKS):
+                future = executor.submit(process_dork, dork_idx, dork)
+                futures.append(future)
             
-            # Thực hiện scan cho domain mới tìm thấy
-            if domains_found > 0 and not stop_flag:
-                # Lấy domain mới từ queue và scan
-                with lock:
-                    domains_to_scan = []
-                    while new_domains_queue and len(domains_to_scan) < 10:  # Giới hạn mỗi lần
-                        domains_to_scan.append(new_domains_queue.pop(0))
-                
-                # Scan các domain này
-                if domains_to_scan:
-                    with ThreadPoolExecutor(max_workers=MAX_WORKERS_RECON) as recon_executor:
-                        recon_futures = [recon_executor.submit(perform_enhanced_recon, domain) 
-                                        for domain in domains_to_scan]
-                        
-                        # Không cần chờ tất cả, để chạy nền
-                        for recon_future in recon_futures:
-                            try:
-                                recon_future.result(timeout=30)
-                            except:
-                                pass
-            
-            # Delay ngẫu nhiên
-            if not stop_flag and dork_idx < len(DORKS):
-                time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+            # Chờ tất cả dork hoàn thành
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing dorks"):
+                dork_idx, new_count, dork = future.result()
+                if new_count > 0:
+                    print(f"  ✓ Dork {dork_idx+1:2d}: {dork[:50]:<50} → {new_count} domain")
     
-    # Scan các domain còn lại trong queue
-    if not stop_flag and new_domains_queue:
-        progress_data['current_status'] = f"Scanning remaining {len(new_domains_queue)} domains..."
-        update_progress_display()
-        
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS_RECON) as recon_executor:
-            recon_futures = []
+    except Exception as e:
+        print(f"  [!] Lỗi trong quá trình thu thập: {e}")
+    
+    # 2. Lưu domain mới vào file
+    if new_domains_queue:
+        with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
             for domain in new_domains_queue:
-                if stop_flag:
-                    break
-                recon_futures.append(recon_executor.submit(perform_enhanced_recon, domain))
-            
-            # Chờ tất cả hoàn thành
-            for recon_future in recon_futures:
-                try:
-                    recon_future.result(timeout=60)
-                except:
-                    pass
+                f.write(f"{domain}\n")
+        print(f"\n✓ Đã lưu {len(new_domains_queue)} domain mới vào {OUTPUT_FILE}")
     
-    print("\n\033[K")  # Xóa dòng progress cuối cùng
+    # 3. Chạy enhanced recon trên các domain
+    print(f"\n{'='*60}")
+    print(f"THỰC HIỆN ENHANCED RECON SCAN...")
+    print(f"Tổng domain: {len(all_domains)}")
+    print(f"{'='*60}")
     
-    # Lưu tất cả domain
-    if not stop_flag:
-        sorted_domains = sorted(all_domains)
-        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-            for domain in sorted_domains:
-                f.write(domain + "\n")
+    if all_domains:
+        # Giới hạn số domain để scan (ví dụ 20 domain đầu tiên)
+        domains_to_scan = list(all_domains)[:20]
         
-        # Lưu kết quả enhanced
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS_RECON) as executor:
+            futures = {}
+            for domain in domains_to_scan:
+                future = executor.submit(perform_enhanced_recon, domain)
+                futures[future] = domain
+            
+            # Chờ tất cả scan hoàn thành
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Scanning domains"):
+                future.result()  # Chờ kết quả
+        
+        # 4. Lưu kết quả enhanced recon
         if enhanced_results:
-            enhanced_data = {
-                "metadata": {
-                    "total_domains": len(all_domains),
-                    "scanned_domains": scan_count,
-                    "vulnerable_domains": len(vulnerable_domains),
-                    "scan_date": time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "schema_version": "2.2"
-                },
-                "results": enhanced_results
-            }
-            
             with open(ENHANCED_OUTPUT_FILE, "w", encoding="utf-8") as f:
-                json.dump(enhanced_data, f, indent=2, ensure_ascii=False)
-            
-            print(f"\n✓ Đã lưu {scan_count} kết quả enhanced vào {ENHANCED_OUTPUT_FILE}")
+                json.dump({
+                    "scan_timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "total_domains": len(enhanced_results),
+                    "results": enhanced_results
+                }, f, indent=2, ensure_ascii=False)
+            print(f"\n✓ Đã lưu {len(enhanced_results)} kết quả scan vào {ENHANCED_OUTPUT_FILE}")
     
-    return sorted_domains, scan_count, len(vulnerable_domains)
+    # ============================================================
+    # KẾT THÚC PHẦN THÊM
+    # ============================================================
+    
+    return all_domains, scan_count, len(vulnerable_domains)
+
+
+
 
 def analyze_results():
     """Phân tích kết quả"""

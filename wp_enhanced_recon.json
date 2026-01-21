@@ -1,0 +1,5087 @@
+{
+  "scan_timestamp": "2026-01-21 22:59:01",
+  "total_domains": 20,
+  "results": {
+    "obelix.vn": {
+      "target": "obelix.vn",
+      "scan_timestamp": "2026-01-21 22:50:07",
+      "wp": {
+        "detected": false,
+        "confidence": 10,
+        "confidence_sources": [
+          "wp_generator_tag"
+        ],
+        "version": "",
+        "version_source": "",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": ""
+      },
+      "plugins": [],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": false,
+        "rest_api_status": "",
+        "rest_api_endpoints": [],
+        "wp_login": false,
+        "wp_admin": false,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 0
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 0,
+        "categories": {},
+        "plugin_combinations": []
+      },
+      "scan_metadata": {
+        "duration": 4.045038461685181,
+        "requests_made": 6,
+        "status": "failed_not_wordpress"
+      }
+    },
+    "azsagency.com.vn": {
+      "target": "azsagency.com.vn",
+      "scan_timestamp": "2026-01-21 22:50:07",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "6.9",
+        "version_source": "meta",
+        "version_sources": [
+          "meta:6.9"
+        ]
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "pro-elements",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "6.5.4",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": "3.34.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "Twenty Twenty-Five",
+        "slug": "twentytwentyfive",
+        "version": "1.0",
+        "version_source": "style.css",
+        "detected_version": "twentytwentyfive"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/elementor/v1",
+          "/elementor/v1/site-editor",
+          "/elementor/v1/site-editor/templates",
+          "/elementor/v1/site-editor/templates/(?P<id>[\\w]+)",
+          "/elementor/v1/site-editor/conditions-config"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 15
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 2,
+        "categories": {
+          "Performance": 1,
+          "Page Builder": 1
+        },
+        "plugin_combinations": []
+      },
+      "scan_metadata": {
+        "duration": 11.82,
+        "requests_made": 78,
+        "status": "completed"
+      }
+    },
+    "halomedia.com.vn": {
+      "target": "halomedia.com.vn",
+      "scan_timestamp": "2026-01-21 22:50:07",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "8.3.28",
+        "php_source": "header",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "6.1.4",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "kk-star-ratings",
+          "detected": true,
+          "version": "5.4.10.3",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "button-contact-vr",
+          "detected": true,
+          "version": "5.0.4",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "7.7",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "akismet",
+          "detected": true,
+          "version": "5.6",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Akismet Anti-Spam",
+            "category": "Security",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "1.0.262",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "popup-maker",
+          "detected": true,
+          "version": "1.21.5",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        }
+      ],
+      "theme": {
+        "name": "Flatsome",
+        "slug": "flatsome",
+        "version": "3.20.4",
+        "version_source": "style.css",
+        "detected_version": "flatsome"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/akismet/v1",
+          "/akismet/v1/key",
+          "/akismet/v1/settings",
+          "/akismet/v1/stats",
+          "/akismet/v1/stats/(?P<interval>[\\w+])"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 5
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 4,
+        "categories": {
+          "Forms": 1,
+          "Performance": 1,
+          "Security": 1,
+          "SEO": 1
+        },
+        "plugin_combinations": []
+      },
+      "scan_metadata": {
+        "duration": 23.56,
+        "requests_made": 88,
+        "status": "completed"
+      }
+    },
+    "netweb.vn": {
+      "target": "netweb.vn",
+      "scan_timestamp": "2026-01-21 22:50:30",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "5.8.12",
+        "version_source": "meta",
+        "version_sources": [
+          "meta:5.8.12"
+        ]
+      },
+      "server": {
+        "webserver": "nginx",
+        "webserver_version": "1.20.2",
+        "php": "",
+        "php_source": "",
+        "server_full": "nginx/1.20.2"
+      },
+      "plugins": [
+        {
+          "slug": "netwebvn-address-contact-form-7",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "5.5.6",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "easy-fancybox",
+          "detected": true,
+          "version": "1.8.18",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "1.0.83",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "onesignal-free-web-push-notifications",
+          "detected": true,
+          "version": "2.2.6",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        }
+      ],
+      "theme": {
+        "name": "netweb.vn 2020 1.0",
+        "slug": "netweb.1.0",
+        "version": "",
+        "version_source": "",
+        "detected_version": "netweb.1.0"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/contact-form-7/v1",
+          "/contact-form-7/v1/contact-forms",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)/feedback",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)/refill"
+        ],
+        "wp_login": false,
+        "wp_admin": true,
+        "upload_dir_listing": true,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": true,
+        "sensitive_files": [
+          "/wp-config.php"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": true,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [
+          "outdated_wp:5.8.12"
+        ],
+        "cve_matches": [
+          {
+            "component": "wordpress",
+            "version": "5.8.12",
+            "cve": "CVE-2020-28032",
+            "type": "core"
+          },
+          {
+            "component": "wordpress",
+            "version": "5.8.12",
+            "cve": "CVE-2021-44223",
+            "type": "core"
+          }
+        ],
+        "risk_score": 100
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 3,
+        "categories": {
+          "Performance": 1,
+          "Forms": 1,
+          "SEO": 1
+        },
+        "plugin_combinations": []
+      },
+      "scan_metadata": {
+        "duration": 7.59,
+        "requests_made": 92,
+        "status": "completed"
+      }
+    },
+    "bizfly.vn": {
+      "target": "bizfly.vn",
+      "scan_timestamp": "2026-01-21 22:50:38",
+      "wp": {
+        "detected": false,
+        "confidence": 0,
+        "confidence_sources": [],
+        "version": "",
+        "version_source": "",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": ""
+      },
+      "plugins": [],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": false,
+        "rest_api_status": "",
+        "rest_api_endpoints": [],
+        "wp_login": false,
+        "wp_admin": false,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 0
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 0,
+        "categories": {},
+        "plugin_combinations": []
+      },
+      "scan_metadata": {
+        "duration": 1.8696379661560059,
+        "requests_made": 6,
+        "status": "failed_not_wordpress"
+      }
+    },
+    "download.com.vn": {
+      "target": "download.com.vn",
+      "scan_timestamp": "2026-01-21 22:50:40",
+      "wp": {
+        "detected": false,
+        "confidence": 25,
+        "confidence_sources": [
+          "wp_admin_redirect"
+        ],
+        "version": "",
+        "version_source": "",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": ""
+      },
+      "plugins": [],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": false,
+        "rest_api_status": "",
+        "rest_api_endpoints": [],
+        "wp_login": false,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 0
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 0,
+        "categories": {},
+        "plugin_combinations": []
+      },
+      "scan_metadata": {
+        "duration": 0.6295900344848633,
+        "requests_made": 6,
+        "status": "failed_not_wordpress"
+      }
+    },
+    "vn4u.vn": {
+      "target": "vn4u.vn",
+      "scan_timestamp": "2026-01-21 22:50:07",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "6.8.1",
+        "version_source": "rss",
+        "version_sources": [
+          "rss:6.8.1"
+        ]
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "lionteam-contact-icon",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "9.2.2",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "6.0.6",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "7.2",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": "25.3.1",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": "9",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "VN4U",
+        "slug": "themevn4u-chuan",
+        "version": "3.0",
+        "version_source": "style.css",
+        "detected_version": "themevn4u-chuan"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/contact-form-7/v1",
+          "/contact-form-7/v1/contact-forms",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)/feedback",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)/feedback/schema"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php",
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/.git/HEAD",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 50
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 37.81,
+        "requests_made": 159,
+        "status": "completed"
+      }
+    },
+    "kdata.vn": {
+      "target": "kdata.vn",
+      "scan_timestamp": "2026-01-21 22:50:11",
+      "wp": {
+        "detected": true,
+        "confidence": 50,
+        "confidence_sources": [
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_feed"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": ""
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": "1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [],
+        "wp_login": false,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/backup.zip",
+          "/debug.log"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [
+          {
+            "component": "woocommerce",
+            "version": "1",
+            "cve": "CVE-2021-24153",
+            "type": "plugin"
+          },
+          {
+            "component": "woocommerce",
+            "version": "1",
+            "cve": "CVE-2020-13225",
+            "type": "plugin"
+          },
+          {
+            "component": "contact-form-7",
+            "version": "1",
+            "cve": "CVE-2020-35489",
+            "type": "plugin"
+          },
+          {
+            "component": "elementor",
+            "version": "1",
+            "cve": "CVE-2022-29455",
+            "type": "plugin"
+          },
+          {
+            "component": "elementor",
+            "version": "1",
+            "cve": "CVE-2021-25028",
+            "type": "plugin"
+          }
+        ],
+        "risk_score": 100
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 40.36,
+        "requests_made": 168,
+        "status": "completed"
+      }
+    },
+    "benthanhlogistics.com.vn": {
+      "target": "benthanhlogistics.com.vn",
+      "scan_timestamp": "2026-01-21 22:50:51",
+      "wp": {
+        "detected": true,
+        "confidence": 40,
+        "confidence_sources": [
+          "wp_login_page",
+          "wp_json_api"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "openresty",
+        "webserver_version": "1.27.1.1",
+        "php": "",
+        "php_source": "",
+        "server_full": "openresty/1.27.1.1"
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": true,
+        "xmlrpc_status": "200",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php",
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/.git/HEAD",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": true
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 55
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 7.13,
+        "requests_made": 228,
+        "status": "completed"
+      }
+    },
+    "vepg.vn": {
+      "target": "vepg.vn",
+      "scan_timestamp": "2026-01-21 22:50:58",
+      "wp": {
+        "detected": true,
+        "confidence": 40,
+        "confidence_sources": [
+          "wp_login_page",
+          "wp_json_api"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "openresty",
+        "webserver_version": "1.27.1.1",
+        "php": "",
+        "php_source": "",
+        "server_full": "openresty/1.27.1.1"
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": true,
+        "xmlrpc_status": "200",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php",
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/.git/HEAD",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": true
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 55
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 1.86,
+        "requests_made": 228,
+        "status": "completed"
+      }
+    },
+    "bimhanoi.com.vn": {
+      "target": "bimhanoi.com.vn",
+      "scan_timestamp": "2026-01-21 22:51:00",
+      "wp": {
+        "detected": true,
+        "confidence": 40,
+        "confidence_sources": [
+          "wp_login_page",
+          "wp_json_api"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "openresty",
+        "webserver_version": "1.27.1.1",
+        "php": "",
+        "php_source": "",
+        "server_full": "openresty/1.27.1.1"
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": true,
+        "xmlrpc_status": "200",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php",
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/.git/HEAD",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": true
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 55
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 6.79,
+        "requests_made": 228,
+        "status": "completed"
+      }
+    },
+    "nhanh.vn": {
+      "target": "nhanh.vn",
+      "scan_timestamp": "2026-01-21 22:51:07",
+      "wp": {
+        "detected": false,
+        "confidence": 0,
+        "confidence_sources": [],
+        "version": "",
+        "version_source": "",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": ""
+      },
+      "plugins": [],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": false,
+        "rest_api_status": "",
+        "rest_api_endpoints": [],
+        "wp_login": false,
+        "wp_admin": false,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 0
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 0,
+        "categories": {},
+        "plugin_combinations": []
+      },
+      "scan_metadata": {
+        "duration": 1.1547551155090332,
+        "requests_made": 6,
+        "status": "failed_not_wordpress"
+      }
+    },
+    "tnhelearning.edu.vn": {
+      "target": "tnhelearning.edu.vn",
+      "scan_timestamp": "2026-01-21 22:50:40",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_includes"
+        ],
+        "version": "6.9",
+        "version_source": "meta",
+        "version_sources": [
+          "meta:6.9"
+        ]
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "9.1.5",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": "19.6.1",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "*\",\"",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": "6.6.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "Paradise",
+        "slug": "paradise",
+        "version": "6.6.1",
+        "version_source": "style.css",
+        "detected_version": "paradise"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/featured-image-from-url/v2",
+          "/featured-image-from-url/v2/enable_fake_api",
+          "/featured-image-from-url/v2/disable_fake_api",
+          "/featured-image-from-url/v2/data_clean_api",
+          "/featured-image-from-url/v2/run_delete_all_api"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php",
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/.git/HEAD",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 50
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 36.74,
+        "requests_made": 163,
+        "status": "completed"
+      }
+    },
+    "alla.com.vn": {
+      "target": "alla.com.vn",
+      "scan_timestamp": "2026-01-21 22:51:08",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_config_indicators"
+        ],
+        "version": "6.8.3",
+        "version_source": "rss",
+        "version_sources": [
+          "rss:6.8.3"
+        ]
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "6.1.2",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "rocket-lazy-load",
+          "detected": true,
+          "version": "2.3.9",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "1.0.254",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": "3.0",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "",
+        "slug": "ALLA",
+        "version": "",
+        "version_source": "",
+        "detected_version": "ALLA"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/contact-form-7/v1",
+          "/contact-form-7/v1/contact-forms",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)/feedback",
+          "/contact-form-7/v1/contact-forms/(?P<id>\\d+)/feedback/schema"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [
+          {
+            "component": "woocommerce",
+            "version": "3.0",
+            "cve": "CVE-2021-24153",
+            "type": "plugin"
+          },
+          {
+            "component": "woocommerce",
+            "version": "3.0",
+            "cve": "CVE-2020-13225",
+            "type": "plugin"
+          },
+          {
+            "component": "elementor",
+            "version": "3.0",
+            "cve": "CVE-2022-29455",
+            "type": "plugin"
+          },
+          {
+            "component": "elementor",
+            "version": "3.0",
+            "cve": "CVE-2021-25028",
+            "type": "plugin"
+          }
+        ],
+        "risk_score": 100
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 12.5,
+        "requests_made": 163,
+        "status": "completed"
+      }
+    },
+    "webbinhduong.com.vn": {
+      "target": "webbinhduong.com.vn",
+      "scan_timestamp": "2026-01-21 22:51:20",
+      "wp": {
+        "detected": true,
+        "confidence": 40,
+        "confidence_sources": [
+          "wp_login_page",
+          "wp_json_api"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "openresty",
+        "webserver_version": "1.27.1.1",
+        "php": "",
+        "php_source": "",
+        "server_full": "openresty/1.27.1.1"
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "",
+        "slug": "",
+        "version": "",
+        "version_source": "",
+        "detected_version": ""
+      },
+      "endpoints": {
+        "xmlrpc": true,
+        "xmlrpc_status": "200",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php",
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/.git/HEAD",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": true
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 55
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 15.07,
+        "requests_made": 228,
+        "status": "completed"
+      }
+    },
+    "taynamsolution.vn": {
+      "target": "taynamsolution.vn",
+      "scan_timestamp": "2026-01-21 22:50:18",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "6.9",
+        "version_source": "meta",
+        "version_sources": [
+          "meta:6.9"
+        ]
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "10.4.2",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "7.7",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "1.0.262",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "TÃ¢y Nam Solutions Child",
+        "slug": "tns-child",
+        "version": "1.0.0",
+        "version_source": "style.css",
+        "detected_version": "tns-child"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/bz_contact_button",
+          "/bz_contact_button/sync",
+          "/bz_contact_button/disconnect",
+          "/bz_contact_button/connect",
+          "/bz_contact_button/settings"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 15
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 3,
+        "categories": {
+          "E-commerce": 1,
+          "Performance": 1,
+          "SEO": 1
+        },
+        "plugin_combinations": [
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 85.65,
+        "requests_made": 69,
+        "status": "completed"
+      }
+    },
+    "user.com.vn": {
+      "target": "user.com.vn",
+      "scan_timestamp": "2026-01-21 22:51:17",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "6.9",
+        "version_source": "meta",
+        "version_sources": [
+          "meta:6.9"
+        ]
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "7.4.33",
+        "php_source": "header",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "10.4.2",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "tutor-pro",
+          "detected": true,
+          "version": "3.4.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "1.0.262",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "tutor",
+          "detected": true,
+          "version": "3.9.3",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "popup-maker",
+          "detected": true,
+          "version": "1.21.5",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        }
+      ],
+      "theme": {
+        "name": "Flatsome",
+        "slug": "flatsome",
+        "version": "3.19.12",
+        "version_source": "style.css",
+        "detected_version": "flatsome"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/nextend-social-login/v1",
+          "/nextend-social-login/v1/(?P<provider>\\w[\\w\\s\\-]*)/get_user",
+          "/tutor/v1",
+          "/tutor/v1/courses",
+          "/tutor/v1/courses/(?P<id>\\d+)"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": true,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": true,
+        "sensitive_files": [
+          "/wp-config.php"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": true,
+        "outdated_plugins": [],
+        "potential_issues": [
+          "outdated_php:7.4.33"
+        ],
+        "cve_matches": [],
+        "risk_score": 25
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 2,
+        "categories": {
+          "E-commerce": 1,
+          "SEO": 1
+        },
+        "plugin_combinations": [
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 28.0,
+        "requests_made": 77,
+        "status": "completed"
+      }
+    },
+    "codegym.vn": {
+      "target": "codegym.vn",
+      "scan_timestamp": "2026-01-21 22:50:44",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "6.9",
+        "version_source": "meta",
+        "version_sources": [
+          "meta:6.9"
+        ]
+      },
+      "server": {
+        "webserver": "openresty",
+        "webserver_version": "",
+        "php": "8.2.25",
+        "php_source": "header",
+        "server_full": "openresty"
+      },
+      "plugins": [
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": "8.1.4",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": "3.7.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "table-of-contents-plus",
+          "detected": true,
+          "version": "2411.1",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "highlighting-code-block",
+          "detected": true,
+          "version": "2.0.1",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "6.1.4",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "button-contact-vr",
+          "detected": true,
+          "version": "5.0.4",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": "1.9.8.7",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "popups-for-divi",
+          "detected": true,
+          "version": "3.2.3",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": "26.8",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "supreme-modules-pro-for-divi",
+          "detected": true,
+          "version": "3.7.1",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "download-monitor",
+          "detected": true,
+          "version": "5.1.6",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "brave-popup-builder",
+          "detected": true,
+          "version": "0.8.4",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        }
+      ],
+      "theme": {
+        "name": "Divi",
+        "slug": "Divi",
+        "version": "4.27.5",
+        "version_source": "style.css",
+        "detected_version": "Divi"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": false,
+        "rest_api_status": "",
+        "rest_api_endpoints": [],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [],
+        "risk_score": 5
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 5,
+        "categories": {
+          "Security": 1,
+          "Performance": 1,
+          "Forms": 2,
+          "SEO": 1
+        },
+        "plugin_combinations": [
+          "Security + Cache"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 117.61,
+        "requests_made": 109,
+        "status": "completed"
+      }
+    },
+    "themewp.vn": {
+      "target": "themewp.vn",
+      "scan_timestamp": "2026-01-21 22:51:36",
+      "wp": {
+        "detected": true,
+        "confidence": 100,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_login_page",
+          "wp_admin_redirect",
+          "wp_json_api",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "",
+        "php_source": "",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "ajax-search-for-woocommerce-premium",
+          "detected": true,
+          "version": "1.31.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "10.3.7",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "yoast-seo",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "siteorigin-panels",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "SiteOrigin Page Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "beaver-builder-lite-version",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Beaver Builder",
+            "category": "Page Builder",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "contact-form-7",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Contact Form 7",
+            "category": "Forms",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wpforms-lite",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "all-in-one-seo-pack",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "All in One SEO",
+            "category": "SEO",
+            "installs": "3M+"
+          }
+        },
+        {
+          "slug": "wpforms",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "WPForms",
+            "category": "Forms",
+            "installs": "6M+"
+          }
+        },
+        {
+          "slug": "yith-woocommerce-advanced-product-options-premium",
+          "detected": true,
+          "version": "4.27.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "litespeed-cache",
+          "detected": true,
+          "version": "7.7",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "LiteSpeed Cache",
+            "category": "Performance",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "visual-composer",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Visual Composer",
+            "category": "Page Builder",
+            "installs": "100K+"
+          }
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "seo-by-rank-math",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Rank Math SEO",
+            "category": "SEO",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "gravityforms",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Gravity Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "w3-total-cache",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "W3 Total Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "*\",\"",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "autoptimize",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "Autoptimize",
+            "category": "Performance",
+            "installs": "1M+"
+          }
+        },
+        {
+          "slug": "wp-super-cache",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Super Cache",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "ninja-forms",
+          "detected": true,
+          "version": "3.20.3",
+          "version_source": "asset_param",
+          "confidence": "low",
+          "category": "Forms",
+          "popular": true,
+          "popular_info": {
+            "name": "Ninja Forms",
+            "category": "Forms",
+            "installs": "1M+"
+          }
+        }
+      ],
+      "theme": {
+        "name": "Flatsome",
+        "slug": "flatsome",
+        "version": "3.20.3",
+        "version_source": "style.css",
+        "detected_version": "flatsome"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/litespeed/v1",
+          "/litespeed/v1/toggle_crawler_state",
+          "/litespeed/v1/tool/check_ip",
+          "/litespeed/v1/guest/sync",
+          "/litespeed/v3"
+        ],
+        "wp_login": true,
+        "wp_admin": true,
+        "upload_dir_listing": false,
+        "upload_status": ""
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": false,
+        "sensitive_files": [
+          "/wp-config.php",
+          "/wp-config.php.bak",
+          "/wp-config.php~",
+          "/.env",
+          "/.git/HEAD",
+          "/backup.zip",
+          "/phpinfo.php",
+          "/debug.log"
+        ],
+        "user_enumeration": true,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [
+          {
+            "component": "woocommerce",
+            "version": "1.31.0",
+            "cve": "CVE-2021-24153",
+            "type": "plugin"
+          },
+          {
+            "component": "woocommerce",
+            "version": "1.31.0",
+            "cve": "CVE-2020-13225",
+            "type": "plugin"
+          },
+          {
+            "component": "contact-form-7",
+            "version": "3.20.3",
+            "cve": "CVE-2020-35489",
+            "type": "plugin"
+          },
+          {
+            "component": "woocommerce",
+            "version": "4.27.0",
+            "cve": "CVE-2021-24153",
+            "type": "plugin"
+          }
+        ],
+        "risk_score": 100
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 20,
+        "categories": {
+          "Security": 1,
+          "Performance": 5,
+          "E-commerce": 1,
+          "SEO": 4,
+          "Page Builder": 4,
+          "Forms": 5
+        },
+        "plugin_combinations": [
+          "SEO + Form + Page Builder",
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 88.62,
+        "requests_made": 174,
+        "status": "completed"
+      }
+    },
+    "bigstep.vn": {
+      "target": "bigstep.vn",
+      "scan_timestamp": "2026-01-21 22:50:07",
+      "wp": {
+        "detected": true,
+        "confidence": 90,
+        "confidence_sources": [
+          "wp_content_structure",
+          "wp_json_api",
+          "wp_generator_tag",
+          "wp_feed",
+          "wp_includes",
+          "wp_config_indicators"
+        ],
+        "version": "",
+        "version_source": "not_found",
+        "version_sources": []
+      },
+      "server": {
+        "webserver": "LiteSpeed",
+        "webserver_version": "",
+        "php": "8.1.33",
+        "php_source": "header",
+        "server_full": "LiteSpeed"
+      },
+      "plugins": [
+        {
+          "slug": "revslider",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Slider",
+          "popular": true,
+          "popular_info": {
+            "name": "Revolution Slider",
+            "category": "Slider",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordfence",
+          "detected": true,
+          "version": "8.1.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Security",
+          "popular": true,
+          "popular_info": {
+            "name": "Wordfence Security",
+            "category": "Security",
+            "installs": "5M+"
+          }
+        },
+        {
+          "slug": "wp-rocket",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Performance",
+          "popular": true,
+          "popular_info": {
+            "name": "WP Rocket",
+            "category": "Performance",
+            "installs": "2M+"
+          }
+        },
+        {
+          "slug": "haru-teespace",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "zlp",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "woocommerce",
+          "detected": true,
+          "version": "10.3.3",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "E-commerce",
+          "popular": true,
+          "popular_info": {
+            "name": "WooCommerce",
+            "category": "E-commerce",
+            "installs": "7M+"
+          }
+        },
+        {
+          "slug": "wopo-toolkit",
+          "detected": true,
+          "version": "1.2.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "bdthemes-element-pack",
+          "detected": true,
+          "version": "7.21.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "revslider-particles-addon",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "bigstep-support-button",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "elementor-pro",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "wp-statistics",
+          "detected": true,
+          "version": "14.15.5",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "elementor",
+          "detected": true,
+          "version": "3.32.2",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Page Builder",
+          "popular": true,
+          "popular_info": {
+            "name": "Elementor",
+            "category": "Page Builder",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "wordpress-seo",
+          "detected": true,
+          "version": "25.9",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "SEO",
+          "popular": true,
+          "popular_info": {
+            "name": "Yoast SEO",
+            "category": "SEO",
+            "installs": "10M+"
+          }
+        },
+        {
+          "slug": "unlimited-elements-for-elementor-premium",
+          "detected": true,
+          "version": "1.0",
+          "version_source": "readme.txt",
+          "confidence": "high",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        },
+        {
+          "slug": "instagram-feed",
+          "detected": true,
+          "version": null,
+          "version_source": null,
+          "confidence": "low",
+          "category": "Unknown",
+          "popular": false,
+          "popular_info": null
+        }
+      ],
+      "theme": {
+        "name": "TeeSpace",
+        "slug": "teespace",
+        "version": "1.6.6",
+        "version_source": "style.css",
+        "detected_version": "teespace"
+      },
+      "endpoints": {
+        "xmlrpc": false,
+        "xmlrpc_status": "",
+        "rest_api": true,
+        "rest_api_status": "200",
+        "rest_api_endpoints": [
+          "/",
+          "/batch/v1",
+          "/oembed/1.0",
+          "/oembed/1.0/embed",
+          "/oembed/1.0/proxy",
+          "/duplicator/v1",
+          "/duplicator/v1/versions",
+          "/sliderrevolution",
+          "/sliderrevolution/sliders",
+          "/sliderrevolution/sliders/(?P<slider>[\\w\\-]+)"
+        ],
+        "wp_login": false,
+        "wp_admin": false,
+        "upload_dir_listing": true,
+        "upload_status": "200"
+      },
+      "security_indicators": {
+        "waf_detected": "",
+        "waf_type": "",
+        "directory_listing": true,
+        "sensitive_files": [
+          "/wp-config.php"
+        ],
+        "user_enumeration": false,
+        "xmlrpc_enabled": false
+      },
+      "vulnerability_indicators": {
+        "outdated_wp": false,
+        "outdated_php": false,
+        "outdated_plugins": [],
+        "potential_issues": [],
+        "cve_matches": [
+          {
+            "component": "elementor",
+            "version": "1.0",
+            "cve": "CVE-2022-29455",
+            "type": "plugin"
+          },
+          {
+            "component": "elementor",
+            "version": "1.0",
+            "cve": "CVE-2021-25028",
+            "type": "plugin"
+          }
+        ],
+        "risk_score": 65
+      },
+      "plugin_analysis": {
+        "popular_plugins_found": 6,
+        "categories": {
+          "Slider": 1,
+          "Security": 1,
+          "Performance": 1,
+          "E-commerce": 1,
+          "Page Builder": 1,
+          "SEO": 1
+        },
+        "plugin_combinations": [
+          "Security + Cache",
+          "E-commerce Base",
+          "WooCommerce + SEO"
+        ]
+      },
+      "scan_metadata": {
+        "duration": 534.71,
+        "requests_made": 136,
+        "status": "completed"
+      }
+    }
+  }
+}
