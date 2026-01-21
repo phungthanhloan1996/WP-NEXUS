@@ -1231,7 +1231,8 @@ def collect_wp_domains_parallel():
     global stop_flag
     
     all_domains = set()
-    
+    rapiddns_seeds = set()
+
     # Load domain cũ nếu có
     if os.path.exists(OUTPUT_FILE):
         with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
@@ -1343,7 +1344,8 @@ def collect_wp_domains_parallel():
         
         try:
             local_new_domains = []
-            
+            delay_time = random.uniform(3.0, 8.0)  # Delay 3-8 giây
+            time.sleep(delay_time)
             # PHẦN 1: XỬ LÝ DUCKDUCKGO
             with lock:
                 progress_data['current_status'] = f"DuckDuckGo: {dork[:40]}..."
@@ -1354,7 +1356,8 @@ def collect_wp_domains_parallel():
                         query=dork,
                         region="vn-vn",
                         safesearch="off",
-                        max_results=NUM_RESULTS_PER_DORK
+                        max_results=NUM_RESULTS_PER_DORK,
+                        timeout=15
                     )
                     
                     for result in results:
@@ -1370,30 +1373,14 @@ def collect_wp_domains_parallel():
                                         all_domains.add(domain)
                                         local_new_domains.append(domain)
                                         new_domains_queue.append(domain)
+                                        rapiddns_seeds.add(domain)
                                         progress_data['total_targets'] += 1
+                        time.sleep(random.uniform(0.5, 1.5))
+
             except Exception as ddg_error:
                 print(f"\r\033[K  [!] DuckDuckGo error: {str(ddg_error)[:50]}")
-            
-            # PHẦN 2: THÊM RAPIDDNS (tùy chọn)
-            if "." in dork and " " not in dork and "site:" not in dork:
-                try:
-                    with lock:
-                        progress_data['current_status'] = f"RapidDNS: {dork[:30]}..."
-                    
-                    rapiddns_domains = collect_from_rapiddns(dork)
-                    if rapiddns_domains:
-                        with lock:
-                            for domain in rapiddns_domains:
-                                if domain not in all_domains:
-                                    all_domains.add(domain)
-                                    local_new_domains.append(domain)
-                                    new_domains_queue.append(domain)
-                                    progress_data['total_targets'] += 1
-                    
-                    time.sleep(random.uniform(1.0, 2.0))
-                    
-                except Exception as rapiddns_error:
-                    print(f"\r\033[K  [!] RapidDNS error: {str(rapiddns_error)[:50]}")
+                time.sleep(random.uniform(10.0, 15.0))
+
             
             with lock:
                 processed_dorks += 1
@@ -1405,6 +1392,7 @@ def collect_wp_domains_parallel():
                 processed_dorks += 1
             return dork_idx, 0, dork
     
+
     def perform_enhanced_recon(domain):
         """Thực hiện enhanced recon trên một domain"""
         nonlocal enhanced_results, scan_count, progress_data, vulnerable_domains
@@ -1548,6 +1536,8 @@ def collect_wp_domains_parallel():
     # Bước 1: Thu thập domain từ các dorks
     print(f"\nĐANG XỬ LÝ {len(DORKS)} DORKS...")
     
+
+
     try:
         with ThreadPoolExecutor(max_workers=MAX_WORKERS_DISCOVERY) as executor:
             futures = []
@@ -1577,11 +1567,26 @@ def collect_wp_domains_parallel():
             for future in as_completed(futures):
                 if stop_flag:
                     break
-                    
+
+
+
                 dork_idx, new_count, dork = future.result()
                 if new_count > 0:
                     print(f"  ✓ Dork {dork_idx+1:2d}: {dork[:50]:<50} → {new_count} domain")
                 
+        print("\n==================== RAPIDDNS EXPANSION ====================")
+        print(f"Seeds: {len(rapiddns_seeds)}")
+
+        for seed in rapiddns_seeds:
+            root = seed.replace("www.", "")
+            domains = collect_from_rapiddns(root)
+            for d in domains:
+                if d not in all_domains:
+                    all_domains.add(d)
+                    new_domains_queue.append(d)
+                    progress_data['total_targets'] += 1
+
+
     except KeyboardInterrupt:
         print("\n\n⚠️  Đã dừng theo yêu cầu người dùng")
         stop_flag = True
