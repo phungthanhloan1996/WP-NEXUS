@@ -1,3 +1,0 @@
-# Add domains here, one per line
-example.com
-wordpress.org
