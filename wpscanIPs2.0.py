@@ -12,14 +12,58 @@ import os
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-from collections import defaultdict
+from collections import defaultdict, deque
 import warnings
 import sys
 from bs4 import BeautifulSoup 
 import re
+import ipaddress
+
 
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+def is_ip(domain):
+    """Kiểm tra xem domain có phải là địa chỉ IP (IPv4 hoặc IPv6) không"""
+    try:
+        ipaddress.ip_address(domain)
+        return True
+    except ValueError:
+        return False
 
+
+def looks_like_cdn_or_api(domain):
+    """Kiểm tra domain có vẻ là CDN, cloud service, API endpoint hay không"""
+    suspicious_keywords = [
+        'cloudflare', 'akamai', 'fastly', 'cloudfront', 'azureedge', 'cdn',
+        'googleusercontent', 'ggpht', 'gstatic', 'apis', 'api', 'graphql',
+        'wp-api', 'json', 'rest', 'cdn.', 'edge.', 'proxy.', 'cache.',
+        's3.', 'amazonaws', 'storage.googleapis', 'firebase', 'vercel',
+        'netlify', 'herokuapp', 'pages.dev'
+    ]
+    
+    domain_lower = domain.lower()
+    
+    # Kiểm tra keyword trong domain
+    if any(kw in domain_lower for kw in suspicious_keywords):
+        return True
+    
+    # Subdomain quá nhiều hoặc pattern API điển hình
+    if domain.count('.') >= 4:
+        return True
+    
+    # Các domain phổ biến của CDN/API
+    cdn_patterns = [
+        r'^[a-z0-9-]+\.cdn\.',
+        r'^[a-z0-9-]+\.edge\.',
+        r'^[a-z0-9-]+\.api\.',
+        r'^[a-z0-9-]+\.wpengine\.',
+        r'^[a-z0-9-]+\.kinsta\.'
+    ]
+    
+    for pattern in cdn_patterns:
+        if re.search(pattern, domain_lower):
+            return True
+    
+    return False
 # Cấu hình
 DORKS = [
     # ==================== DORKS CƠ BẢN HIỆN CÓ ====================
@@ -1106,7 +1150,6 @@ class WordPressReconEnhanced:
             self.results['scan_metadata']['status'] = 'failed_no_access'
             return self.results
         
-        # Bước 2: Detect WordPress signatures và tính confidence
         self._detect_wp_signatures()
         self._calculate_wp_confidence()
         
@@ -1232,6 +1275,8 @@ def collect_wp_domains_parallel():
     
     all_domains = set()
     rapiddns_seeds = set()
+    new_domains_queue = deque()
+    domain_state = {}
 
     # Load domain cũ nếu có
     if os.path.exists(OUTPUT_FILE):
@@ -1246,7 +1291,6 @@ def collect_wp_domains_parallel():
     
     # Shared variables
     lock = threading.Lock()
-    new_domains_queue = []
     processed_dorks = 0
     total_dorks = len(DORKS)
     enhanced_results = {}
@@ -1331,13 +1375,84 @@ def collect_wp_domains_parallel():
             return None
 
 
+    def v12_discovery_filter(domain):
+        """
+        V12-L1: Filter cho SEARCH ENGINE (DDG)
+        Nhẹ – loại rác rõ ràng – cho phép mở rộng DNS
+        """
+        if is_ip(domain):
+            return {"accept": False, "allow_dns_expand": False}
+
+        if domain.count('.') > 4:
+            return {"accept": False, "allow_dns_expand": False}
+
+        if looks_like_cdn_or_api(domain):
+            return {"accept": False, "allow_dns_expand": False}
+
+        # ❗ search engine cho phép seed DNS
+        return {
+            "accept": True,
+            "allow_dns_expand": True,
+            "score": 70,              # điểm tin cậy discovery
+            "confidence": 0.7 
+        }
+
+
+
+
+    def v12_dns_filter(domain):
+        """
+        V12-L2: Filter cho RAPIDDNS
+        Chặt – không feed ngược – loại hạ tầng
+        """
+        if is_ip(domain):
+            return {"accept": False, "allow_dns_expand": False}
+
+        # RapidDNS rất nhiều sub sâu
+        if domain.count('.') > 3:
+            return {"accept": False, "allow_dns_expand": False}
+
+        if looks_like_cdn_or_api(domain):
+            return {"accept": False, "allow_dns_expand": False}
+
+        # ❗ DNS expansion TUYỆT ĐỐI không feed lại
+        return {
+            "accept": True,
+            "allow_dns_expand": False,
+            "score": 85,              # DNS chắc hơn search
+            "confidence": 0.85
+        }
+
+
+
+
+
+
+    def v12_classify(domain, source="unknown"):
+        """
+        Wrapper / backward compatibility
+        """
+        if source == "ddg":
+            return v12_discovery_filter(domain)
+        elif source == "rapiddns":
+            return v12_dns_filter(domain)
+        else:
+            return {
+                "accept": False,
+                "allow_dns_expand": False,
+                "score": 0,
+                "confidence": 0.0
+            }
+
+
+
 
 
 
 
     def process_dork(dork_idx, dork):
-        """Xử lý từng dork"""
-        nonlocal processed_dorks, new_domains_queue, progress_data
+        nonlocal processed_dorks, progress_data
+
         
         if stop_flag:
             return dork_idx, 0, dork
@@ -1363,18 +1478,35 @@ def collect_wp_domains_parallel():
                     for result in results:
                         if stop_flag:
                             break
-                            
                         url = result.get('href', '') or result.get('url', '')
                         if url:
                             domain = extract_domain_func(url)
                             if domain:
+                                v12_result = v12_discovery_filter(domain)
+                                if not v12_result["accept"]:
+                                    continue
+
                                 with lock:
                                     if domain not in all_domains:
                                         all_domains.add(domain)
                                         local_new_domains.append(domain)
                                         new_domains_queue.append(domain)
-                                        rapiddns_seeds.add(domain)
+
+                                        domain_state[domain] = {
+                                            "source": "ddg",
+                                            "v12_accept": True,
+                                            "v12_score": v12_result.get("score", 0),
+                                            "v12_confidence": v12_result.get("confidence", 0.0),
+                                            "allow_dns_expand": v12_result["allow_dns_expand"],
+                                            "from_rapiddns": False,
+                                            "recon_done": False
+                                        }
+
+                                        if v12_result["allow_dns_expand"]:
+                                            rapiddns_seeds.add(domain)
+
                                         progress_data['total_targets'] += 1
+
                         time.sleep(random.uniform(0.5, 1.5))
 
             except Exception as ddg_error:
@@ -1406,7 +1538,19 @@ def collect_wp_domains_parallel():
             
             recon = WordPressReconEnhanced(domain)
             result = recon.scan()
-            
+            with lock:
+                if domain in domain_state:
+                    # nâng confidence nếu đúng WordPress
+                    if result['wp']['detected']:
+                        domain_state[domain]["final_wp_detected"] = True
+                        domain_state[domain]["final_wp_confidence"] = result['wp']['confidence']
+                        domain_state[domain]["final_score"] = result.get("risk_score", 0)
+                    else:
+                        domain_state[domain]["final_wp_detected"] = False
+                        domain_state[domain]["final_wp_confidence"] = result['wp']['confidence']
+
+                    domain_state[domain]["recon_done"] = True
+
             with lock:
                 enhanced_results[domain] = result
                 scan_count += 1
@@ -1580,11 +1724,34 @@ def collect_wp_domains_parallel():
         for seed in rapiddns_seeds:
             root = seed.replace("www.", "")
             domains = collect_from_rapiddns(root)
+
             for d in domains:
-                if d not in all_domains:
-                    all_domains.add(d)
-                    new_domains_queue.append(d)
+                if d in all_domains:
+                    continue
+
+                v12_result = v12_classify(d, source="rapiddns")
+
+                if not v12_result["accept"]:
+                    continue
+
+                all_domains.add(d)
+                new_domains_queue.append(d)
+
+                domain_state[d] = {
+                    "source": "rapiddns",
+                    "v12_accept": True,
+                    "v12_score": v12_result.get("score", 0),
+                    "v12_confidence": v12_result.get("confidence", 0.0),
+                    "allow_dns_expand": False,
+                    "from_rapiddns": True,
+                    "recon_done": False
+                }
+
+
+                with lock:
                     progress_data['total_targets'] += 1
+
+
 
 
     except KeyboardInterrupt:
@@ -1620,7 +1787,11 @@ def collect_wp_domains_parallel():
     print(f"{'='*60}")
     
     # Giới hạn số domain scan
-    domains_to_scan = list(all_domains)[:15]
+    domains_to_scan = [
+        d for d in new_domains_queue
+        if d in domain_state
+    ][:15]
+
     
     print(f"\nĐANG SCAN {len(domains_to_scan)} DOMAINS...\n")
     
