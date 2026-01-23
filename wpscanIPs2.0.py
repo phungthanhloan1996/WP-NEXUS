@@ -1351,6 +1351,52 @@ def collect_wp_domains_parallel():
         return domains
     
 
+    def v12_discovery_source():
+        """
+        V12 – Discovery Engine
+        Sinh domain độc lập, đã qua lọc
+        """
+        discovered = set()
+
+        sources = [
+            "https://raw.githubusercontent.com/arkadiyt/bounty-targets-data/main/data/domains.txt",
+            "https://rapiddns.io/subdomain/wp-content?full=1"
+        ]
+
+        for src in sources:
+            try:
+                r = requests.get(src, timeout=12, verify=False)
+                raw_domains = re.findall(
+                    r'([a-zA-Z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn))',
+                    r.text
+                )
+
+                for d in raw_domains:
+                    domain = d.lower().replace("www.", "")
+                    if not extract_domain_func(domain):
+                        continue
+
+                    v12_result = v12_discovery_filter(domain)
+                    if not v12_result["accept"]:
+                        continue
+
+                    discovered.add(domain)
+
+            except:
+                continue
+
+        return discovered
+
+
+
+
+
+
+
+
+
+
+
 
     def extract_domain_func(url):
         """Trích xuất domain từ URL"""
@@ -1831,6 +1877,33 @@ def collect_wp_domains_parallel():
         print(f"\n✓ Đã lưu {len(enhanced_results)} kết quả scan vào {ENHANCED_OUTPUT_FILE}")
     
     return all_domains, scan_count, len(vulnerable_domains)
+
+
+
+    print("\n==================== V12 DISCOVERY SOURCE ====================")
+
+    v12_domains = v12_discovery_source()
+    print(f"V12 discovered: {len(v12_domains)} domains")
+
+    for d in v12_domains:
+        if d in all_domains:
+            continue
+
+        all_domains.add(d)
+        new_domains_queue.append(d)
+
+        domain_state[d] = {
+            "source": "v12",
+            "v12_accept": True,
+            "v12_score": 90,
+            "v12_confidence": 0.9,
+            "allow_dns_expand": False,
+            "from_rapiddns": False,
+            "recon_done": False
+        }
+
+        progress_data['total_targets'] += 1
+
 
 
 
