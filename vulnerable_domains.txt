@@ -1,0 +1,4 @@
+benthanhlogistics.com.vn|Risk:85|WP:5.5.15|PHP:Unknown|CVE:2|Plugins:0|Time:6.07s
+kgc.vn|Risk:50|WP:5.9.12|PHP:7.4.33|CVE:0|Plugins:1|Time:10.92s
+tuphuongjumbobag.com.vn|Risk:85|WP:4.7.11|PHP:Unknown|CVE:2|Plugins:1|Time:14.17s
+mdri.org.vn|Risk:100|WP:5.7.2|PHP:5.6.40|CVE:2|Plugins:2|Time:19.33s
