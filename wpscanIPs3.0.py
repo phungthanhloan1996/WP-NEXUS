@@ -150,6 +150,8 @@ class AsyncEventBus:
         self.queue = asyncio.Queue(maxsize=max_size)
         self.subscribers = defaultdict(list)
         self.stats = {'processed': 0, 'dropped': 0}
+        self.is_running = False
+        self.shutdown_event = asyncio.Event()  # Thêm shutdown event
     
     async def publish(self, event: Event):
         """Publish event vào bus"""
@@ -168,9 +170,18 @@ class AsyncEventBus:
     async def run(self):
         """Chạy event bus loop"""
         print(f"[EventBus] Started")
-        while True:
+        self.is_running = True
+        
+        while self.is_running and not self.shutdown_event.is_set():
             try:
-                event = await self.queue.get()
+                # Sử dụng asyncio.wait để có thể bị interrupt
+                try:
+                    event = await asyncio.wait_for(
+                        self.queue.get(),
+                        timeout=0.5  # Timeout ngắn
+                    )
+                except asyncio.TimeoutError:
+                    continue  # Kiểm tra lại điều kiện dừng
                 
                 # Gọi tất cả subscribers cho event type này
                 if event.type in self.subscribers:
@@ -180,9 +191,26 @@ class AsyncEventBus:
                 self.queue.task_done()
                 
             except asyncio.CancelledError:
+                print("[EventBus] Cancelled!")
                 break
             except Exception as e:
                 print(f"[EventBus] Error: {e}")
+        
+        print("[EventBus] Stopped")
+    
+    async def stop(self):
+        """Dừng event bus ngay lập tức"""
+        print("[EventBus] Force stopping...")
+        self.is_running = False
+        self.shutdown_event.set()
+        
+        # Xóa tất cả items trong queue
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+                self.queue.task_done()
+            except:
+                pass
 
 # =================== PHASE 0: SOURCE PRODUCERS ===================
 class BaseProducer:
@@ -1658,46 +1686,57 @@ class EnhancedAttackSurfaceEnumerator:
         
         return methods
     
-    async def enumerate_users(self, domain: str) -> List[Dict]:
-        """Enumerate users via multiple methods"""
+    async def enumerate_users(self, domain):
         users = []
-        
-        # Method 1: Author pages
+
+        # 1️⃣ Thử REST API trước
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-json/wp/v2/users?per_page=20"
+            try:
+                async with self.session.get(url, ssl=False, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for u in data:
+                            # CHỈ nhận user nếu có slug rõ ràng
+                            if isinstance(u, dict) and 'slug' in u:
+                                users.append({
+                                    "id": u.get("id"),
+                                    "slug": u.get("slug"),
+                                    "name": u.get("name"),
+                                    "source": "wp-json"
+                                })
+            except:
+                pass
+
+        # Nếu REST có user thật → return luôn
+        if users:
+            return users
+
+        # 2️⃣ Fallback: author scan (rất chặt)
         for i in range(1, 6):
             for scheme in ['https://', 'http://']:
                 url = f"{scheme}{domain}/?author={i}"
                 try:
-                    async with self.session.get(url, allow_redirects=False, timeout=3, ssl=False) as resp:
-                        if resp.status in [301, 302]:
-                            location = resp.headers.get('Location', '')
-                            if 'author' in location or 'user' in location:
+                    async with self.session.get(url, allow_redirects=True, ssl=False, timeout=5) as resp:
+                        final_url = str(resp.url)
+
+                        # Chỉ accept nếu URL có /author/<slug>/
+                        m = re.search(r'/author/([^/]+)/?', final_url)
+                        if m:
+                            slug = m.group(1)
+
+                            # tránh slug rác
+                            if slug.lower() not in ['page', 'author', 'user']:
                                 users.append({
-                                    'id': i,
-                                    'method': 'author_redirect',
-                                    'location': location
+                                    "id": i,
+                                    "slug": slug,
+                                    "source": "author_redirect"
                                 })
                 except:
                     continue
-        
-        # Method 2: REST API users endpoint
-        for scheme in ['https://', 'http://']:
-            url = f"{scheme}{domain}/wp-json/wp/v2/users"
-            try:
-                async with self.session.get(url, timeout=4, ssl=False) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if isinstance(data, list):
-                            for user in data[:5]:
-                                users.append({
-                                    'id': user.get('id'),
-                                    'username': user.get('slug'),
-                                    'name': user.get('name'),
-                                    'method': 'rest_api'
-                                })
-            except:
-                continue
-        
+
         return users
+
     
     async def check_uploads(self, domain: str) -> bool:
         """Check uploads directory listing"""
@@ -1841,10 +1880,17 @@ class EnhancedRiskScorer:
             risk_score += 25
         
         # 5. User enumeration
-        user_count = len(surfaces.get('users', []))
-        if user_count > 0:
-            findings.append(f"User enumeration possible ({user_count} users)")
-            risk_score += min(user_count * 5, 25)
+        users = surfaces.get('users', [])
+
+        # chỉ tính nếu user có slug thật
+        real_users = [u for u in users if u.get("slug")]
+
+        if len(real_users) > 0:
+            findings.append(
+                f"User enumeration confirmed ({len(real_users)} real users)"
+            )
+            risk_score += min(len(real_users) * 5, 20)
+
         
         # 6. XML-RPC attack surface
         if surfaces.get('xmlrpc') and surfaces.get('xmlrpc_methods'):
@@ -2031,7 +2077,6 @@ class EnhancedOutputManager:
         print(f"  • PHP Version: {result.get('php_version', 'Unknown')}")
         print(f"  • Vulnerable Plugins: {result.get('vulnerable_plugins', 0)}")
         print(f"  • Total Plugins: {result.get('plugin_count', 0)}")
-        
         # Risk assessment
         print(f"\n⚠️  RISK ASSESSMENT")
         print(f"  • Score: {color}{result['score']}/100 [{result['level']}]{reset}")
@@ -2129,6 +2174,8 @@ class EnhancedWASEPipeline:
         self.risk_scorer = EnhancedRiskScorer(self.event_bus)
         self.output_manager = EnhancedOutputManager(self.event_bus, output_file)
     
+
+
     async def setup_producers(self):
         """Setup producers"""
         if self.targets_file:
@@ -2170,36 +2217,40 @@ class EnhancedWASEPipeline:
                 await producer.start()
                 print(f"[Pipeline] Đã khởi động producer: {producer.name}")
             
-            # Main loop
             print(f"\n{'═' * 80}")
             print("🚀 ENHANCED PIPELINE ĐÃ BẮT ĐẦU - Deep enumeration enabled")
             print(f"{'═' * 80}\n")
+            print("📢 NHẤN CTRL+C ĐỂ DỪNG NGAY\n")
             
-            # Wait for stop signal
-            stop_event = asyncio.Event()
-            
-            def signal_handler():
-                print("\n\n⚠️  Đang tắt pipeline...")
-                stop_event.set()
-            
-            loop = asyncio.get_event_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                loop.add_signal_handler(sig, signal_handler)
-            
-            await stop_event.wait()
-            
-            # Cleanup
-            print("\n[Pipeline] Đang dọn dẹp...")
-            self.is_running = False
-            
-            for producer in self.producers:
-                await producer.stop()
-            
-            bus_task.cancel()
+            # ĐỢI producers hoàn thành hoặc bị interrupt
             try:
-                await bus_task
-            except asyncio.CancelledError:
-                pass
+                # Chờ tất cả producers hoàn thành
+                producer_tasks = [asyncio.create_task(self._wait_for_producer(p)) 
+                                 for p in self.producers]
+                
+                # Chờ một trong hai: producers hoàn thành HOẶC keyboard interrupt
+                done, pending = await asyncio.wait(
+                    producer_tasks,
+                    timeout=None,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                
+                # Nếu có pending tasks, cancel chúng
+                for task in pending:
+                    task.cancel()
+                
+            except KeyboardInterrupt:
+                print("\n\n🛑 NHẬN CTRL+C - DỪNG PIPELINE!")
+            
+        except KeyboardInterrupt:
+            print("\n🛑 Keyboard interrupt trong pipeline")
+        except Exception as e:
+            print(f"[Pipeline] Lỗi: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # DỪNG MỌI THỨ
+            await self._force_shutdown()
             
             # Final stats
             stats = self.output_manager.stats
@@ -2221,12 +2272,55 @@ class EnhancedWASEPipeline:
             
             print(f"\n✅ Enhanced pipeline hoàn thành thành công!")
             
-        except Exception as e:
-            print(f"[Pipeline] Lỗi: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            self.is_running = False
+            # THOÁT NGAY LẬP TỨC - QUAN TRỌNG!
+            import sys
+            sys.exit(0)  # <-- THÊM DÒNG NÀY!
+    
+    async def _wait_for_producer(self, producer):
+        """Chờ producer hoàn thành"""
+        # Giả lập chờ producer
+        while producer.is_running:
+            await asyncio.sleep(0.5)
+        return True
+    
+    async def _force_shutdown(self):
+        """Dừng mọi thứ"""
+        print("\n" + "!" * 80)
+        print("🛑 FORCE SHUTDOWN - DỪNG TẤT CẢ!")
+        print("!" * 80)
+        
+        # 1. Dừng tất cả producers
+        for producer in self.producers:
+            try:
+                await producer.stop()
+            except:
+                pass
+        
+        # 2. Dừng event bus
+        if hasattr(self.event_bus, 'stop'):
+            try:
+                await self.event_bus.stop()
+            except:
+                pass
+        
+        # 3. Cancel ALL running tasks
+        tasks = [t for t in asyncio.all_tasks() 
+                if t is not asyncio.current_task()]
+        
+        for task in tasks:
+            task.cancel()
+        
+        # 4. Đợi cực ngắn rồi bỏ qua
+        if tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=1.0
+                )
+            except:
+                pass
+        
+        print("✅ Đã shutdown hoàn toàn")
 
 # =================== MAIN ===================
 async def main():
@@ -2237,7 +2331,7 @@ async def main():
         print(f"❌ Không tìm thấy file targets: {args.targets}")
         return
     
-    # Create enhanced pipeline
+    # Tạo pipeline
     pipeline = EnhancedWASEPipeline(
         targets_file=args.targets,
         output_file=args.output,
@@ -2245,8 +2339,18 @@ async def main():
         discovery=not args.no_discovery
     )
     
-    # Run pipeline
-    await pipeline.run()
+    # CHẠY VÀ THOÁT
+    try:
+        await pipeline.run()
+    except KeyboardInterrupt:
+        print("\n\n👋 Dừng theo yêu cầu người dùng")
+    except Exception as e:
+        print(f"\n❌ Lỗi: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # THOÁT CHƯƠNG TRÌNH
+    print("\n🏁 Kết thúc chương trình")
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -2284,11 +2388,14 @@ if __name__ == "__main__":
         print("❌ Python 3.7+ required")
         sys.exit(1)
     
+    # ĐƠN GIẢN: Chạy và thoát
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n\n👋 Goodbye!")
+        print("\n\n🛑 Thoát khẩn cấp!")
     except Exception as e:
-        print(f"\n❌ Fatal error: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"\n💥 Lỗi nghiêm trọng: {e}")
+    
+    # ĐẢM BẢO THOÁT
+    print("\n✅ Script đã kết thúc hoàn toàn")
+    sys.exit(0)
