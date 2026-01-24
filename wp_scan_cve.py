@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-WordPress/PHP Security Audit - Behavioral Observation Edition (2026)
-Static Posture Assessment + Dynamic Server Response Observation
-Language tuned for professional pentest reports
+WordPress/PHP Security Audit - Professional Edition (2026)
+Advanced WordPress Version Detection + PHP Version Checking + WP API Analysis
+Behavioral Observation + Static Posture Assessment
+Multi-target support with comprehensive reporting
 """
 
 import requests
@@ -13,6 +14,7 @@ import time
 from urllib.parse import urljoin, quote, urlparse
 from datetime import datetime
 from colorama import init, Fore, Style
+from pathlib import Path
 
 init(autoreset=True)
 
@@ -26,12 +28,424 @@ class ServerBehaviorObserver:
     def __init__(self, target_url):
         self.target = target_url.rstrip('/')
         self.session = requests.Session()
-        self.session.verify = False
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
         self.baseline_profile = {}
 
+    # ================= ENHANCED WORDPRESS VERSION DETECTION =================
+    def detect_wordpress_version_advanced(self):
+        """
+        Advanced WordPress version detection using multiple methods
+        Returns: dict with version info and confidence level
+        """
+        version_info = {
+            'detected': False,
+            'version': None,
+            'confidence': 'unknown',
+            'methods': [],
+            'sources': [],
+            'evidence': []
+        }
+        
+        try:
+            # Method 1: Generator meta tag (most reliable)
+            r = self.session.get(self.target, timeout=10)
+            html = r.text
+            
+            # Check if it's WordPress
+            if not any(x in html.lower() for x in ['wp-content', 'wp-includes', 'wp-json', 'wordpress']):
+                return version_info
+            
+            version_info['detected'] = True
+            
+            all_versions = []  # Lưu tất cả version phát hiện được
+            
+            # Method 1A: Meta generator tag
+            generator_match = re.search(
+                r'<meta\s+name=["\']generator["\']\s+content=["\']WordPress\s+([\d\.]+)["\']',
+                html,
+                re.IGNORECASE
+            )
+            if generator_match:
+                version = generator_match.group(1)
+                version_info['version'] = version
+                version_info['confidence'] = 'high'
+                version_info['methods'].append('generator_meta')
+                version_info['evidence'].append(f'Generator meta: WordPress {version}')
+                version_info['sources'].append('html_meta')
+                all_versions.append(('high', version))
+            
+            # Method 1B: RDF feed (older WP versions)
+            rdf_match = re.search(
+                r'<rdf:RDF.*xmlns:admin="http://webns.net/mvcb/".*<admin:generatorAgent.*rdf:resource="http://wordpress.org/\?v=([\d\.]+)"',
+                html,
+                re.IGNORECASE | re.DOTALL
+            )
+            if rdf_match:
+                version = rdf_match.group(1)
+                version_info['methods'].append('rdf_feed')
+                version_info['evidence'].append(f'RDF feed: WordPress {version}')
+                version_info['sources'].append('html_rdf')
+                all_versions.append(('medium', version))
+            
+            # Method 2: Readme.html file
+            readme_url = urljoin(self.target, '/readme.html')
+            try:
+                readme_resp = self.session.get(readme_url, timeout=5)
+                if readme_resp.status_code == 200:
+                    readme_match = re.search(
+                        r'Version\s*([\d\.]+)',
+                        readme_resp.text,
+                        re.IGNORECASE
+                    )
+                    if readme_match:
+                        version = readme_match.group(1)
+                        version_info['methods'].append('readme_file')
+                        version_info['evidence'].append(f'readme.html: Version {version}')
+                        version_info['sources'].append('readme_html')
+                        all_versions.append(('high', version))
+                        
+                        # Ưu tiên readme.html hơn nếu chưa có version
+                        if not version_info['version']:
+                            version_info['version'] = version
+                            version_info['confidence'] = 'high'
+            except:
+                pass
+            
+            # Method 3: CSS/JS file versions
+            version_patterns = [
+                r'/wp-includes/js/jquery/jquery-migrate\.js\?ver=([\d\.]+)',
+                r'/wp-includes/js/wp-embed\.min\.js\?ver=([\d\.]+)',
+                r'/wp-includes/css/dist/block-library/style\.min\.css\?ver=([\d\.]+)',
+                r'/wp-includes/js/jquery/jquery\.js\?ver=([\d\.]+)',
+            ]
+            
+            for pattern in version_patterns:
+                matches = re.findall(pattern, html)
+                for match in matches[:2]:
+                    if match and match.count('.') >= 1:
+                        # Filter out jQuery versions
+                        if not (match.startswith('1.') or match.startswith('2.') or match.startswith('3.')):
+                            version_info['methods'].append('asset_version')
+                            version_info['evidence'].append(f'Asset version: {match}')
+                            version_info['sources'].append('html_assets')
+                            all_versions.append(('medium', match))
+                            
+                            # Chỉ set nếu chưa có version
+                            if not version_info['version']:
+                                version_info['version'] = match
+                                version_info['confidence'] = 'medium'
+                            break
+                if version_info['version']:
+                    break
+            
+            # Method 4: WordPress feed
+            feed_url = urljoin(self.target, '/feed/')
+            try:
+                feed_resp = self.session.get(feed_url, timeout=5)
+                if feed_resp.status_code == 200:
+                    feed_match = re.search(
+                        r'<generator>https://wordpress\.org/\?v=([\d\.]+)</generator>',
+                        feed_resp.text,
+                        re.IGNORECASE
+                    )
+                    if feed_match:
+                        version = feed_match.group(1)
+                        version_info['methods'].append('feed_generator')
+                        version_info['evidence'].append(f'Feed generator: WordPress {version}')
+                        version_info['sources'].append('xml_feed')
+                        all_versions.append(('medium', version))
+                        
+                        if not version_info['version']:
+                            version_info['version'] = version
+                            version_info['confidence'] = 'medium'
+            except:
+                pass
+            
+            # Method 5: wp-links-opml.php (CHỈ thêm evidence, KHÔNG set version)
+            opml_url = urljoin(self.target, '/wp-links-opml.php')
+            try:
+                opml_resp = self.session.get(opml_url, timeout=5)
+                if opml_resp.status_code == 200 and 'opml' in opml_resp.text.lower():
+                    version_info['methods'].append('deprecated_file')
+                    version_info['evidence'].append('wp-links-opml.php present (WordPress < 3.5)')
+                    version_info['sources'].append('deprecated_file')
+                    # KHÔNG set version ở đây, chỉ thêm evidence
+            except:
+                pass
+            
+            # Method 6: Login page version
+            login_url = urljoin(self.target, '/wp-login.php')
+            try:
+                login_resp = self.session.get(login_url, timeout=5)
+                login_match = re.search(
+                    r'WordPress\s+([\d\.]+)',
+                    login_resp.text,
+                    re.IGNORECASE
+                )
+                if login_match:
+                    version = login_match.group(1)
+                    version_info['methods'].append('login_page')
+                    version_info['evidence'].append(f'Login page: WordPress {version}')
+                    version_info['sources'].append('login_page')
+                    all_versions.append(('low', version))
+                    
+                    if not version_info['version']:
+                        version_info['version'] = version
+                        version_info['confidence'] = 'low'
+            except:
+                pass
+            
+            # Chọn version có độ tin cậy cao nhất từ all_versions
+            if all_versions and not version_info['version']:
+                # Ưu tiên: high > medium > low
+                high_versions = [v for conf, v in all_versions if conf == 'high']
+                if high_versions:
+                    version_info['version'] = high_versions[0]
+                    version_info['confidence'] = 'high'
+                else:
+                    medium_versions = [v for conf, v in all_versions if conf == 'medium']
+                    if medium_versions:
+                        version_info['version'] = medium_versions[0]
+                        version_info['confidence'] = 'medium'
+                    else:
+                        low_versions = [v for conf, v in all_versions if conf == 'low']
+                        if low_versions:
+                            version_info['version'] = low_versions[0]
+                            version_info['confidence'] = 'low'
+            
+            # Clean up version string
+            if version_info['version']:
+                version_info['version'] = re.sub(r'[^\d\.]', '', version_info['version'])
+                if not re.match(r'^\d+(\.\d+)+$', version_info['version']):
+                    version_info['version'] = None
+                    version_info['confidence'] = 'unknown'
+            
+            return version_info
+            
+        except Exception as e:
+            return version_info
+
+    # ================= 1. CHECK ALL RESPONSES FOR PHP VERSION =================
+    def check_all_responses_for_php_version(self):
+        """Check X-Powered-By in all response headers"""
+        php_versions = set()
+        headers_data = []
+
+        test_endpoints = [
+            {'path': '/', 'name': 'Homepage'},
+            {'path': '/wp-login.php', 'name': 'Login Page'},
+            {'path': '/wp-admin/', 'name': 'Admin Dashboard'},
+            {'path': '/wp-json/wp/v2/', 'name': 'REST API v2'},
+            {'path': '/wp-content/uploads/', 'name': 'Uploads Directory'},
+            {'path': '/index.php', 'name': 'Index PHP'}
+        ]
+
+        for endpoint in test_endpoints:
+            try:
+                url = urljoin(self.target, endpoint['path'])
+                r = self.session.get(url, timeout=8, allow_redirects=True)
+                
+                php_version = None
+                
+                # Check X-Powered-By header
+                if 'X-Powered-By' in r.headers:
+                    php_match = re.search(r'PHP/([\d\.]+)', r.headers['X-Powered-By'], re.IGNORECASE)
+                    if php_match:
+                        php_version = php_match.group(1)
+                        php_versions.add(php_version)
+                
+                # Also check Server header for PHP info
+                if 'Server' in r.headers and php_version is None:
+                    php_match = re.search(r'PHP/([\d\.]+)', r.headers['Server'], re.IGNORECASE)
+                    if php_match:
+                        php_version = php_match.group(1)
+                        php_versions.add(php_version)
+                
+                headers_data.append({
+                    'endpoint': endpoint['name'],
+                    'url': url,
+                    'status_code': r.status_code,
+                    'headers': {
+                        'X-Powered-By': r.headers.get('X-Powered-By'),
+                        'Server': r.headers.get('Server')
+                    },
+                    'php_version': php_version
+                })
+                
+                time.sleep(0.5)
+            except Exception as e:
+                continue
+
+        php_versions_list = list(php_versions)
+        consistency = 'HIGH' if len(php_versions_list) == 1 else 'LOW' if len(php_versions_list) > 1 else 'NONE'
+        
+        return {
+            'php_versions_found': php_versions_list,
+            'headers_data': headers_data,
+            'consistent_across_endpoints': consistency,
+            'primary_php_version': php_versions_list[0] if php_versions_list else None
+        }
+
+    # ================= 2. CHECK WP JSON API =================
+    def check_wp_json_api(self):
+        """Check WordPress REST API for version and info"""
+        api_info = {
+            'wp_api_available': False,
+            'wp_version_via_api': None,
+            'api_endpoints': [],
+            'users_endpoint_status': None,
+            'user_enumeration_possible': False,
+            'api_details': {}
+        }
+
+        try:
+            wp_json_url = urljoin(self.target, '/wp-json/')
+            r = self.session.get(wp_json_url, timeout=10)
+            if r.status_code == 200:
+                api_info['wp_api_available'] = True
+                try:
+                    data = r.json()
+                    if 'namespace' in data:
+                        api_info['api_endpoints'] = list(data.get('namespaces', []))
+                except:
+                    pass
+        except:
+            pass
+
+        try:
+            wp_v2_url = urljoin(self.target, '/wp-json/wp/v2/')
+            r = self.session.get(wp_v2_url, timeout=8)
+            if r.status_code == 200:
+                api_info['wp_version_via_api'] = 'v2_available'
+                try:
+                    data = r.json()
+                    if isinstance(data, dict):
+                        for key, value in data.items():
+                            if 'version' in key.lower() and isinstance(value, str):
+                                api_info['wp_version_via_api'] = value
+                                break
+                except:
+                    pass
+                
+                users_url = urljoin(self.target, '/wp-json/wp/v2/users')
+                r_users = self.session.get(users_url, timeout=6)
+                api_info['users_endpoint_status'] = r_users.status_code
+                if r_users.status_code == 200:
+                    try:
+                        users_data = r_users.json()
+                        api_info['users_count'] = len(users_data) if isinstance(users_data, list) else 'unknown'
+                        if isinstance(users_data, list) and len(users_data) > 0:
+                            api_info['user_enumeration_possible'] = True
+                            # Check what user data is exposed
+                            sample_user = users_data[0]
+                            exposed_fields = []
+                            for field in ['id', 'name', 'slug', 'url', 'description']:
+                                if field in sample_user and sample_user[field]:
+                                    exposed_fields.append(field)
+                            api_info['exposed_fields'] = exposed_fields
+                    except:
+                        pass
+        except:
+            pass
+
+        return api_info
+
+    # ================= 3. CHECK SPECIFIC PLUGIN VERSIONS =================
+    def check_specific_plugin_versions(self):
+        """Check specific plugins for detailed version info"""
+        plugins_to_check = [
+            {
+                'slug': 'contact-form-7',
+                'files': ['readme.txt', 'contact-form-7.php', 'style.css'],
+                'description': 'Contact Form 7 - Popular form plugin'
+            },
+            {
+                'slug': 'elementor',
+                'files': ['readme.txt', 'elementor.php', 'elementor-pro.php'],
+                'description': 'Elementor - Page builder'
+            },
+            {
+                'slug': 'woocommerce',
+                'files': ['readme.txt', 'woocommerce.php'],
+                'description': 'WooCommerce - E-commerce'
+            },
+            {
+                'slug': 'wp-file-manager',
+                'files': ['readme.txt', 'file_manager.php'],
+                'description': 'WP File Manager - File management'
+            }
+        ]
+
+        plugin_details = []
+
+        for plugin in plugins_to_check:
+            plugin_data = {
+                'slug': plugin['slug'],
+                'description': plugin['description'],
+                'detected': False,
+                'found_files': [],
+                'versions_detected': [],
+                'detection_methods': []
+            }
+            
+            for file in plugin['files']:
+                file_url = urljoin(self.target, f'/wp-content/plugins/{plugin["slug"]}/{file}')
+                try:
+                    r = self.session.head(file_url, timeout=5, allow_redirects=False)
+                    if r.status_code == 200:
+                        plugin_data['found_files'].append(file)
+                        if file.endswith(('.php', '.txt', '.css')):
+                            r_content = self.session.get(file_url, timeout=7)
+                            if r_content.status_code == 200:
+                                version_patterns = [
+                                    r'Version:\s*([\d\.]+)',
+                                    r'Stable tag:\s*([\d\.]+)',
+                                    r'v([\d\.]+)'
+                                ]
+                                for pattern in version_patterns:
+                                    match = re.search(pattern, r_content.text, re.IGNORECASE)
+                                    if match:
+                                        version = match.group(1)
+                                        if version not in plugin_data['versions_detected']:
+                                            plugin_data['versions_detected'].append(version)
+                                            plugin_data['detection_methods'].append(f'file:{file}')
+                                        break
+                                plugin_data['detected'] = True
+                except:
+                    continue
+            
+            # Check if directory exists
+            if not plugin_data['detected']:
+                plugin_dir_url = urljoin(self.target, f'/wp-content/plugins/{plugin["slug"]}/')
+                try:
+                    resp = self.session.head(plugin_dir_url, timeout=5, allow_redirects=False)
+                    if resp.status_code in (200, 301, 302, 403):
+                        plugin_data['detected'] = True
+                        plugin_data['detection_methods'].append('directory_exists')
+                except:
+                    pass
+            
+            if plugin_data['detected']:
+                plugin_details.append(plugin_data)
+
+            time.sleep(0.7)
+        
+        # Add summary
+        summary = {
+            'plugins_searched': len(plugins_to_check),
+            'plugins_found': len([p for p in plugin_details if p['detected']]),
+            'versions_detected': len([p for p in plugin_details if p['versions_detected']]),
+            'detection_rate': f"{(len([p for p in plugin_details if p['detected']]) / len(plugins_to_check) * 100):.1f}%" if plugins_to_check else '0%'
+        }
+        
+        return {
+            'plugins_checked': plugin_details,
+            'summary': summary
+        }
+
+    # ================= ORIGINAL BEHAVIORAL METHODS =================
     def observe_rate_handling(self):
         """Observe server response patterns under sequential requests"""
         endpoint = urljoin(self.target, '/wp-login.php')
@@ -340,6 +754,7 @@ class ServerBehaviorObserver:
         observations = {
             'detected_cms': False,
             'wp_version': None,
+            'wp_version_info': {},  # NEW: Detailed version info
             'plugins': [],
             'themes': [],
             'plugin_detection_sources': []
@@ -357,13 +772,10 @@ class ServerBehaviorObserver:
             if any(x in html_lower for x in ['wp-content', 'wp-includes', 'wp-json', 'wordpress']):
                 observations['detected_cms'] = True
 
-            generator_match = re.search(
-                r'<meta name="generator" content="WordPress ([\d\.]+)"',
-                html,
-                re.IGNORECASE
-            )
-            if generator_match:
-                observations['wp_version'] = generator_match.group(1)
+            # NEW: Advanced version detection
+            version_info = self.detect_wordpress_version_advanced()
+            observations['wp_version'] = version_info.get('version')
+            observations['wp_version_info'] = version_info
 
             # 2. Passive resource paths
             plugin_paths = set(re.findall(r'/wp-content/plugins/([^/]+)/', html))
@@ -530,162 +942,6 @@ class ServerBehaviorObserver:
         except:
             pass
 
-    # ===============================
-    # NEW ENHANCEMENTS
-    # ===============================
-
-    def check_all_responses_for_php_version(self):
-        """Check X-Powered-By in all response headers"""
-        php_versions = set()
-        headers_data = []
-
-        test_endpoints = [
-            '/',
-            '/wp-login.php',
-            '/wp-admin/',
-            '/wp-json/wp/v2/',
-            '/wp-content/uploads/',
-            '/index.php'
-        ]
-
-        for endpoint in test_endpoints:
-            try:
-                url = urljoin(self.target, endpoint)
-                r = self.session.get(url, timeout=8, allow_redirects=True)
-                if 'X-Powered-By' in r.headers:
-                    php_header = r.headers['X-Powered-By']
-                    php_match = re.search(r'PHP/([\d\.]+)', php_header, re.IGNORECASE)
-                    if php_match:
-                        php_versions.add(php_match.group(1))
-                    headers_data.append({
-                        'endpoint': endpoint,
-                        'status_code': r.status_code,
-                        'headers': {k: v for k, v in r.headers.items() if 'powered' in k.lower() or 'server' in k.lower()},
-                        'php_version': php_match.group(1) if php_match else None
-                    })
-                time.sleep(0.5)
-            except Exception as e:
-                continue
-
-        return {
-            'php_versions_found': list(php_versions),
-            'headers_data': headers_data,
-            'consistent_across_endpoints': len(php_versions) == 1 if php_versions else None
-        }
-
-    def check_wp_json_api(self):
-        """Check WordPress REST API for version and info"""
-        api_info = {
-            'wp_api_available': False,
-            'wp_version_via_api': None,
-            'api_endpoints': [],
-            'users_endpoint_status': None
-        }
-
-        try:
-            wp_json_url = urljoin(self.target, '/wp-json/')
-            r = self.session.get(wp_json_url, timeout=10)
-            if r.status_code == 200:
-                api_info['wp_api_available'] = True
-                try:
-                    data = r.json()
-                    if 'namespace' in data:
-                        api_info['api_endpoints'] = list(data.get('namespaces', []))
-                except:
-                    pass
-        except:
-            pass
-
-        try:
-            wp_v2_url = urljoin(self.target, '/wp-json/wp/v2/')
-            r = self.session.get(wp_v2_url, timeout=8)
-            if r.status_code == 200:
-                api_info['wp_version_via_api'] = 'v2_available'
-                try:
-                    data = r.json()
-                    if isinstance(data, dict):
-                        for key, value in data.items():
-                            if 'version' in key.lower() and isinstance(value, str):
-                                api_info['wp_version_via_api'] = value
-                                break
-                except:
-                    pass
-                users_url = urljoin(self.target, '/wp-json/wp/v2/users')
-                r_users = self.session.get(users_url, timeout=6)
-                api_info['users_endpoint_status'] = r_users.status_code
-                if r_users.status_code == 200:
-                    try:
-                        users_data = r_users.json()
-                        api_info['users_count'] = len(users_data) if isinstance(users_data, list) else 'unknown'
-                    except:
-                        pass
-        except:
-            pass
-
-        return api_info
-
-    def check_specific_plugin_versions(self):
-        """Check specific plugins for detailed version info"""
-        plugins_to_check = [
-            {
-                'slug': 'contact-form-7',
-                'files': ['readme.txt', 'contact-form-7.php', 'style.css'],
-                'description': 'Contact Form 7 - Popular form plugin'
-            },
-            {
-                'slug': 'elementor',
-                'files': ['readme.txt', 'elementor.php', 'elementor-pro.php'],
-                'description': 'Elementor - Page builder'
-            },
-            {
-                'slug': 'woocommerce',
-                'files': ['readme.txt', 'woocommerce.php'],
-                'description': 'WooCommerce - E-commerce'
-            },
-            {
-                'slug': 'wp-file-manager',
-                'files': ['readme.txt', 'file_manager.php'],
-                'description': 'WP File Manager - File management'
-            }
-        ]
-
-        plugin_details = []
-
-        for plugin in plugins_to_check:
-            plugin_data = {
-                'slug': plugin['slug'],
-                'description': plugin['description'],
-                'found_files': [],
-                'versions_detected': []
-            }
-            for file in plugin['files']:
-                file_url = urljoin(self.target, f'/wp-content/plugins/{plugin["slug"]}/{file}')
-                try:
-                    r = self.session.head(file_url, timeout=5, allow_redirects=False)
-                    if r.status_code == 200:
-                        plugin_data['found_files'].append(file)
-                        if file.endswith(('.php', '.txt', '.css')):
-                            r_content = self.session.get(file_url, timeout=7)
-                            if r_content.status_code == 200:
-                                version_patterns = [
-                                    r'Version:\s*([\d\.]+)',
-                                    r'Stable tag:\s*([\d\.]+)',
-                                    r'v([\d\.]+)'
-                                ]
-                                for pattern in version_patterns:
-                                    match = re.search(pattern, r_content.text, re.IGNORECASE)
-                                    if match:
-                                        version = match.group(1)
-                                        if version not in plugin_data['versions_detected']:
-                                            plugin_data['versions_detected'].append(version)
-                                        break
-                except:
-                    continue
-            if plugin_data['found_files']:
-                plugin_details.append(plugin_data)
-
-            time.sleep(0.7)
-        return plugin_details
 
 # ===============================
 # PROFESSIONAL AUDIT ENGINE
@@ -715,11 +971,109 @@ class ProfessionalWPAudit:
             'CONTEXT': Fore.CYAN,
             'BEHAVIOR': Fore.BLUE,
             'SUMMARY': Fore.GREEN,
-            'NOTE': Fore.WHITE
+            'NOTE': Fore.WHITE,
+            'VERSION': Fore.CYAN,
+            'PHP': Fore.MAGENTA,
+            'API': Fore.BLUE,
+            'PLUGIN': Fore.CYAN
         }
         print(f"{color_map.get(level, Fore.WHITE)}[{level}] {message}")
         if context:
             print(f"   {context}")
+
+    # ================= WORDPRESS VERSION ANALYSIS =================
+    def analyze_wordpress_version(self):
+        """Analyze WordPress version for security implications"""
+        self.log('VERSION', 'Analyzing WordPress version security implications...')
+        
+        version_info = self.behavioral_data.get('fingerprint', {}).get('wp_version_info', {})
+        wp_version = version_info.get('version')
+        
+        if not wp_version:
+            self.log('VERSION', 'WordPress version not detected or could not be determined')
+            return
+        
+        # Add version as static indicator
+        self.static_indicators['wordpress_version'] = wp_version
+        self.static_indicators['version_confidence'] = version_info.get('confidence', 'unknown')
+        self.static_indicators['version_detection_methods'] = version_info.get('methods', [])
+        
+        # Security implications analysis
+        security_notes = []
+        severity = 'LOW'
+        
+        try:
+            # Parse version
+            parts = wp_version.split('.')
+            major = int(parts[0]) if parts[0].isdigit() else 0
+            minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            
+            # EOL versions check (as of 2026)
+            eol_versions = [
+                ('3.', 'CRITICAL'),  # WordPress 3.x series
+                ('4.0', 'CRITICAL'), ('4.1', 'CRITICAL'), ('4.2', 'CRITICAL'),
+                ('4.3', 'CRITICAL'), ('4.4', 'CRITICAL'), ('4.5', 'CRITICAL'),
+                ('4.6', 'CRITICAL'), ('4.7', 'CRITICAL'), ('4.8', 'CRITICAL'),
+                ('4.9', 'CRITICAL'), ('5.0', 'HIGH'), ('5.1', 'HIGH'),
+                ('5.2', 'HIGH'), ('5.3', 'HIGH'), ('5.4', 'HIGH'),
+                ('5.5', 'HIGH'), ('5.6', 'HIGH'), ('5.7', 'HIGH'),
+                ('5.8', 'MEDIUM'), ('5.9', 'MEDIUM'), ('6.0', 'MEDIUM'),
+                ('6.1', 'MEDIUM'), ('6.2', 'MEDIUM'), ('6.3', 'MEDIUM')
+            ]
+            
+            for eol_ver, eol_severity in eol_versions:
+                if wp_version.startswith(eol_ver):
+                    security_notes.append({
+                        'severity': eol_severity,
+                        'note': f'WordPress {wp_version} is outdated and may have known vulnerabilities',
+                        'recommendation': f'Upgrade to latest WordPress version immediately'
+                    })
+                    severity = eol_severity
+                    break
+            
+            # Check if it's the latest major version
+            if major < 6:
+                if not security_notes:  # Only add if not already flagged
+                    security_notes.append({
+                        'severity': 'MEDIUM',
+                        'note': f'WordPress {wp_version} is not the latest major version (6.x+)',
+                        'recommendation': 'Consider upgrading to WordPress 6.x or later'
+                    })
+                    severity = 'MEDIUM'
+            
+            # Check for very old versions
+            if major < 4:
+                security_notes.append({
+                    'severity': 'CRITICAL',
+                    'note': f'WordPress {wp_version} is extremely outdated and unsupported',
+                    'recommendation': 'Immediate upgrade required - significant security risks'
+                })
+                severity = 'CRITICAL'
+                
+        except Exception as e:
+            self.log('NOTE', f'Version analysis error: {e}')
+        
+        # Add to observations
+        version_indicator = {
+            'type': 'WORDPRESS_VERSION_DISCLOSED',
+            'severity': severity,
+            'evidence': f'WordPress {wp_version} detected',
+            'context': f'Confidence: {version_info.get("confidence", "unknown")}. Methods: {", ".join(version_info.get("methods", []))}',
+            'version_details': version_info,
+            'security_notes': security_notes,
+            'recommendation': 'Keep WordPress updated to latest version for security patches'
+        }
+        
+        self.observations['posture_indicators'].append(version_indicator)
+        
+        # Log findings
+        if version_info.get('evidence'):
+            for evidence in version_info['evidence'][:3]:  # Show top 3 evidences
+                self.log('VERSION', f'  {evidence}')
+        
+        for note in security_notes:
+            color = Fore.RED if note['severity'] == 'CRITICAL' else Fore.YELLOW if note['severity'] == 'HIGH' else Fore.WHITE
+            self.log('VERSION', f'{color}  {note["severity"]}: {note["note"]}')
 
     # ================= STATIC INDICATORS =================
     def assess_static_indicators(self):
@@ -727,23 +1081,23 @@ class ProfessionalWPAudit:
         self.log('INDICATOR', 'Collecting static posture indicators')
 
         # 1. Check PHP version in all responses (NEW ENHANCEMENT)
-        self.log('OBSERVATION', 'Checking X-Powered-By headers across multiple endpoints...')
+        self.log('PHP', 'Checking X-Powered-By headers across multiple endpoints...')
         php_check_data = self.observer.check_all_responses_for_php_version()
         self.behavioral_data['php_headers_scan'] = php_check_data
 
         php_versions = php_check_data.get('php_versions_found', [])
         if php_versions:
             version_str = ', '.join(php_versions)
-            self.static_indicators['php_version'] = version_str
-            self.static_indicators['php_version_in_headers'] = True
-            self.static_indicators['php_headers_consistent'] = php_check_data.get('consistent_across_endpoints', False)
+            self.static_indicators['php_version'] = php_check_data.get('primary_php_version')
+            self.static_indicators['php_versions_found'] = php_versions
+            self.static_indicators['php_headers_consistent'] = php_check_data.get('consistent_across_endpoints')
 
             # Add observation
             indicator = {
                 'type': 'PHP_VERSION_DISCLOSURE',
                 'severity': 'MEDIUM',
-                'evidence': f'PHP version(s) found in X-Powered-By headers: {version_str}',
-                'context': f'PHP version disclosure across {len(php_check_data["headers_data"])} endpoint(s)',
+                'evidence': f'PHP version(s) found in headers: {version_str}',
+                'context': f'PHP version disclosure across {len(php_check_data.get("headers_data", []))} endpoint(s). Consistency: {php_check_data.get("consistent_across_endpoints")}',
                 'recommendation': 'Consider removing or customizing the X-Powered-By header',
                 'data': php_check_data['headers_data']
             }
@@ -756,15 +1110,17 @@ class ProfessionalWPAudit:
             self.observations['posture_indicators'].append(indicator)
 
         # 2. Check WordPress REST API (NEW ENHANCEMENT)
-        self.log('OBSERVATION', 'Checking WordPress REST API endpoints...')
+        self.log('API', 'Checking WordPress REST API endpoints...')
         wp_api_data = self.observer.check_wp_json_api()
         self.behavioral_data['wp_api_scan'] = wp_api_data
 
         if wp_api_data.get('wp_api_available'):
             self.static_indicators['wp_rest_api_enabled'] = True
             self.static_indicators['wp_api_version'] = wp_api_data.get('wp_version_via_api', 'unknown')
+            self.static_indicators['user_enumeration_possible'] = wp_api_data.get('user_enumeration_possible', False)
+            
             if wp_api_data.get('users_endpoint_status') == 200:
-                self.observations['posture_indicators'].append({
+                indicator = {
                     'type': 'WORDPRESS_API_USER_ENUMERATION',
                     'severity': 'LOW',
                     'evidence': '/wp-json/wp/v2/users endpoint accessible',
@@ -772,28 +1128,52 @@ class ProfessionalWPAudit:
                     'recommendation': 'Consider restricting API access or disabling user enumeration',
                     'data': {
                         'users_count': wp_api_data.get('users_count', 'unknown'),
-                        'status_code': wp_api_data.get('users_endpoint_status')
+                        'status_code': wp_api_data.get('users_endpoint_status'),
+                        'exposed_fields': wp_api_data.get('exposed_fields', [])
                     }
-                })
+                }
+                
+                if wp_api_data.get('user_enumeration_possible'):
+                    indicator['severity'] = 'MEDIUM'
+                    indicator['additional_context'] = 'User enumeration via REST API is possible'
+                
+                self.observations['posture_indicators'].append(indicator)
 
         # 3. Check specific plugin versions (NEW ENHANCEMENT)
-        self.log('OBSERVATION', 'Checking specific plugin versions...')
+        self.log('PLUGIN', 'Checking specific plugin versions...')
         plugin_details = self.observer.check_specific_plugin_versions()
         self.behavioral_data['plugin_version_scan'] = plugin_details
 
-        for plugin in plugin_details:
-            if plugin['versions_detected']:
-                self.observations['posture_indicators'].append({
-                    'type': 'PLUGIN_VERSION_DETECTION',
-                    'severity': 'INFO',
-                    'evidence': f"Plugin {plugin['slug']} version(s): {', '.join(plugin['versions_detected'])}",
-                    'context': plugin['description'],
-                    'data': {
-                        'slug': plugin['slug'],
-                        'versions': plugin['versions_detected'],
-                        'files_found': plugin['found_files']
+        for plugin_data in plugin_details.get('plugins_checked', []):
+            if plugin_data.get('detected'):
+                versions = plugin_data.get('versions_detected', [])
+                if versions:
+                    indicator = {
+                        'type': 'PLUGIN_VERSION_DETECTION',
+                        'severity': 'INFO',
+                        'evidence': f"Plugin {plugin_data['slug']} version(s): {', '.join(versions)}",
+                        'context': plugin_data.get('description', ''),
+                        'data': {
+                            'slug': plugin_data['slug'],
+                            'versions': versions,
+                            'files_found': plugin_data.get('found_files', []),
+                            'detection_methods': plugin_data.get('detection_methods', [])
+                        }
                     }
-                })
+                    
+                    # Critical plugins check
+                    if plugin_data['slug'] == 'wp-file-manager':
+                        indicator['severity'] = 'HIGH'
+                        indicator['additional_context'] = 'WP File Manager has known vulnerabilities - ensure updated'
+                    
+                    self.observations['posture_indicators'].append(indicator)
+        
+        # Add summary for plugin checking
+        if plugin_details.get('summary'):
+            summary = plugin_details['summary']
+            self.log('PLUGIN', f"Plugins searched: {summary.get('plugins_searched', 0)}")
+            self.log('PLUGIN', f"Plugins found: {summary.get('plugins_found', 0)}")
+            self.log('PLUGIN', f"Detection rate: {summary.get('detection_rate', '0%')}")
 
         # 4. Directory listing indicator (ORIGINAL)
         try:
@@ -823,6 +1203,9 @@ class ProfessionalWPAudit:
         # 0. Plugin and theme fingerprinting
         fp_data = self.observer.fingerprint_plugins_themes()
         self.behavioral_data['fingerprint'] = fp_data
+
+        # NEW: WordPress version analysis
+        self.analyze_wordpress_version()
 
         # Log detected plugins and themes
         if fp_data.get('plugins'):
@@ -901,9 +1284,20 @@ class ProfessionalWPAudit:
             }
             self.reality_context.append(context)
 
-        # Example 2: WordPress API + user enumeration context
+        # Example 2: WordPress version + PHP version context
+        wp_version = self.static_indicators.get('wordpress_version')
+        if php_version and wp_version:
+            context = {
+                'static_indicator': f'PHP {php_version} + WordPress {wp_version}',
+                'behavioral_observation': 'Software stack version disclosure',
+                'contextual_interpretation': 'Attackers can target known vulnerabilities in specific version combinations',
+                'practical_consideration': 'Consider version obscuration and regular updates'
+            }
+            self.reality_context.append(context)
+
+        # Example 3: WordPress API + user enumeration context
         wp_api_data = self.behavioral_data.get('wp_api_scan', {})
-        if wp_api_data.get('users_endpoint_status') == 200:
+        if wp_api_data.get('user_enumeration_possible'):
             context = {
                 'static_indicator': 'WordPress REST API enabled',
                 'behavioral_observation': f"Users endpoint accessible with status {wp_api_data.get('users_endpoint_status')}",
@@ -912,23 +1306,25 @@ class ProfessionalWPAudit:
             }
             self.reality_context.append(context)
 
-        # Example 3: Plugin versions + directory listing context
-        plugin_scan = self.behavioral_data.get('plugin_version_scan', [])
-        if plugin_scan and self.static_indicators.get('directory_listing_enabled'):
+        # Example 4: Plugin versions + directory listing context
+        plugin_scan = self.behavioral_data.get('plugin_version_scan', {})
+        if plugin_scan.get('plugins_checked') and self.static_indicators.get('directory_listing_enabled'):
             vulnerable_plugins = []
-            for plugin in plugin_scan:
-                if plugin.get('versions_detected'):
-                    vulnerable_plugins.append(f"{plugin['slug']} ({plugin['versions_detected'][0]})")
+            for plugin in plugin_scan.get('plugins_checked', []):
+                if plugin.get('detected') and plugin.get('slug') in ['wp-file-manager']:
+                    versions = plugin.get('versions_detected', [])
+                    if versions:
+                        vulnerable_plugins.append(f"{plugin['slug']} ({versions[0]})")
             if vulnerable_plugins:
                 context = {
                     'static_indicator': 'Directory listing enabled on uploads',
-                    'behavioral_observation': f"Plugin versions detected: {', '.join(vulnerable_plugins[:3])}",
+                    'behavioral_observation': f"Plugin versions detected: {', '.join(vulnerable_plugins)}",
                     'contextual_interpretation': 'Directory access combined with known plugin versions may increase risk',
                     'practical_consideration': 'Attackers can correlate plugin versions with known vulnerabilities'
                 }
                 self.reality_context.append(context)
 
-        # Example 4: PHP version consistency across endpoints
+        # Example 5: PHP version consistency across endpoints
         php_scan = self.behavioral_data.get('php_headers_scan', {})
         if php_scan.get('consistent_across_endpoints') is False:
             context = {
@@ -948,6 +1344,92 @@ class ProfessionalWPAudit:
         print(f"   Assessment Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*80}{Style.RESET_ALL}\n")
 
+        # WordPress Version Summary
+        wp_version = self.static_indicators.get('wordpress_version')
+        if wp_version:
+            version_info = self.behavioral_data.get('fingerprint', {}).get('wp_version_info', {})
+            confidence = version_info.get('confidence', 'unknown').upper()
+            methods = version_info.get('methods', [])
+            
+            print(f"{Fore.YELLOW}🔄 WORDPRESS VERSION DETECTION")
+            print(f"{'-'*40}")
+            print(f"{Fore.WHITE}Version: {Fore.CYAN}{wp_version}")
+            print(f"{Fore.WHITE}Confidence: {Fore.CYAN}{confidence}")
+            
+            if methods:
+                print(f"{Fore.WHITE}Detection Methods: {Fore.CYAN}{', '.join(methods)}")
+            
+            # Show security implications
+            for indicator in self.observations['posture_indicators']:
+                if indicator.get('type') == 'WORDPRESS_VERSION_DISCLOSED' and indicator.get('security_notes'):
+                    print(f"\n{Fore.WHITE}Security Implications:")
+                    for note in indicator['security_notes']:
+                        color = Fore.RED if note['severity'] == 'CRITICAL' else Fore.YELLOW if note['severity'] == 'HIGH' else Fore.WHITE
+                        print(f"{color}  ⚠ {note['severity']}: {note['note']}")
+                    break
+            
+            print()
+
+        # PHP Version Summary
+        php_version = self.static_indicators.get('php_version')
+        if php_version:
+            php_versions = self.static_indicators.get('php_versions_found', [])
+            consistency = self.static_indicators.get('php_headers_consistent', 'N/A')
+            
+            print(f"{Fore.MAGENTA}🐘 PHP VERSION DETECTION")
+            print(f"{'-'*40}")
+            print(f"{Fore.WHITE}Primary Version: {Fore.CYAN}{php_version}")
+            if len(php_versions) > 1:
+                print(f"{Fore.WHITE}All Versions Found: {Fore.CYAN}{', '.join(php_versions)}")
+            print(f"{Fore.WHITE}Consistency: {Fore.CYAN}{consistency}")
+            
+            # Check for old PHP versions
+            if php_version.startswith(('5.', '7.0', '7.1', '7.2', '7.3')):
+                print(f"{Fore.RED}  ⚠ WARNING: PHP {php_version} is EOL or approaching EOL - security risk")
+            
+            print()
+
+        # WordPress API Summary
+        if self.static_indicators.get('wp_rest_api_enabled'):
+            api_version = self.static_indicators.get('wp_api_version')
+            user_enum = self.static_indicators.get('user_enumeration_possible', False)
+            
+            print(f"{Fore.BLUE}🔌 WORDPRESS REST API")
+            print(f"{'-'*40}")
+            print(f"{Fore.WHITE}Status: {Fore.GREEN}Detected")
+            if api_version and api_version != 'unknown':
+                print(f"{Fore.WHITE}API Version: {Fore.CYAN}{api_version}")
+            print(f"{Fore.WHITE}User Enumeration: {Fore.YELLOW if user_enum else Fore.GREEN}{'Possible' if user_enum else 'Not detected'}")
+            if user_enum:
+                print(f"{Fore.YELLOW}  ⚠ NOTE: User information may be exposed via API")
+            print()
+
+        # Specific Plugin Versions Summary
+        plugin_scan = self.behavioral_data.get('plugin_version_scan', {})
+        if plugin_scan.get('plugins_checked'):
+            detected_plugins = [p for p in plugin_scan['plugins_checked'] if p.get('detected')]
+            
+            if detected_plugins:
+                print(f"{Fore.CYAN}🧩 SPECIFIC PLUGIN VERSIONS")
+                print(f"{'-'*40}")
+                
+                for plugin in detected_plugins:
+                    plugin_name = plugin.get('description', plugin.get('slug'))
+                    versions = plugin.get('versions_detected', [])
+                    
+                    if versions:
+                        version_display = f"v{versions[0]}" if versions[0] != 'unknown' else "version unknown"
+                    else:
+                        version_display = "detected (version unknown)"
+                    
+                    print(f"{Fore.WHITE}• {plugin_name}: {Fore.CYAN}{version_display}")
+                    
+                    # Highlight critical plugins
+                    if plugin.get('slug') == 'wp-file-manager':
+                        print(f"{Fore.RED}    ⚠ CRITICAL: WP File Manager has known vulnerabilities")
+                
+                print()
+
         # Executive Summary
         print(f"{Fore.YELLOW}📋 EXECUTIVE SUMMARY")
         print(f"{'-'*40}")
@@ -955,24 +1437,12 @@ class ProfessionalWPAudit:
         posture_count = len(self.observations['posture_indicators'])
         behavior_count = len(self.observations['behavioral_patterns'])
 
+        print(f"WordPress Version: {wp_version or 'Not detected'}")
+        print(f"PHP Version: {php_version or 'Not detected'}")
+        print(f"WordPress API: {'Detected' if self.static_indicators.get('wp_rest_api_enabled') else 'Not detected'}")
         print(f"Posture Indicators Collected: {posture_count}")
         print(f"Behavioral Patterns Observed: {behavior_count}")
         print(f"Contextual Analyses: {len(self.reality_context)}")
-
-        # PHP Version Summary
-        php_versions = self.static_indicators.get('php_version')
-        if php_versions:
-            print(f"PHP Version(s) Detected: {php_versions}")
-
-        # WordPress API Status
-        if self.static_indicators.get('wp_rest_api_enabled'):
-            print(f"WordPress REST API: Enabled")
-
-        # Plugin Detection Summary
-        fp_data = self.behavioral_data.get('fingerprint', {})
-        if fp_data.get('plugins'):
-            print(f"Plugins Detected: {len(fp_data['plugins'])}")
-
         print()
 
         # Posture Indicators (Static)
@@ -981,7 +1451,7 @@ class ProfessionalWPAudit:
             print(f"{'-'*40}")
             for indicator in self.observations['posture_indicators']:
                 sev = indicator.get('severity', 'UNKNOWN')
-                color = Fore.RED if sev == 'HIGH' else Fore.YELLOW if sev == 'MEDIUM' else Fore.CYAN
+                color = Fore.RED if sev == 'HIGH' or sev == 'CRITICAL' else Fore.YELLOW if sev == 'MEDIUM' else Fore.CYAN
                 print(f"{color}• [{sev}] {indicator['type']}")
                 print(f"  {Fore.WHITE}{indicator.get('context', '')}")
                 if 'additional_context' in indicator:
@@ -1040,9 +1510,12 @@ class ProfessionalWPAudit:
             "• Behavioral observations based on server responses to non-malicious inputs",
             "• Posture indicators represent configuration observations",
             "• Contextual analysis connects static indicators with observed behaviors",
+            "• WordPress version detection uses 7 different methods",
+            "• PHP version checked across 6 different endpoints",
+            "• Specific plugin versions checked: contact-form-7, elementor, woocommerce, wp-file-manager",
+            "• WordPress REST API analyzed for user enumeration possibilities",
             "• No authentication or session testing performed in this phase",
-            "• No destructive or denial-of-service testing conducted",
-            "• Enhanced scanning includes: PHP header checks, WordPress API verification, plugin version detection"
+            "• No destructive or denial-of-service testing conducted"
         ]
         for note in notes:
             print(f"{Fore.WHITE}{note}")
@@ -1057,9 +1530,10 @@ class ProfessionalWPAudit:
                 'behavioral_observation': 'Observation of server responses to non-malicious test inputs',
                 'contextual_analysis': 'Correlation between static indicators and observed behaviors',
                 'enhanced_checks': [
+                    'Advanced WordPress version detection (7 methods)',
                     'X-Powered-By header analysis across multiple endpoints',
-                    'WordPress REST API verification',
-                    'Plugin version detection'
+                    'WordPress REST API verification and user enumeration check',
+                    'Specific plugin version detection (4 plugins)'
                 ]
             },
             'static_indicators': self.static_indicators,
@@ -1067,18 +1541,62 @@ class ProfessionalWPAudit:
             'observations': self.observations,
             'reality_context': self.reality_context,
             'summary': {
+                'wordpress_version': wp_version,
+                'php_version': php_version,
+                'wp_api_detected': self.static_indicators.get('wp_rest_api_enabled'),
                 'posture_indicators_count': posture_count,
                 'behavioral_patterns_count': behavior_count,
                 'contextual_analyses_count': len(self.reality_context),
-                'php_versions_detected': self.static_indicators.get('php_version', 'none'),
                 'plugins_detected': len(fp_data.get('plugins', [])),
                 'themes_detected': len(fp_data.get('themes', []))
             }
         }
-        filename = f"wp_professional_assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(filename, 'w', encoding='utf-8') as f:
+        
+        # Create output directory
+        output_dir = Path("wp_assessment_results")
+        output_dir.mkdir(exist_ok=True)
+        
+        # Create target-specific directory (clean target name)
+        target_name = self.target.replace("://", "_").replace("/", "_").replace(":", "_").replace(".", "_")
+        if target_name.endswith("_"):
+            target_name = target_name[:-1]
+        
+        target_dir = output_dir / target_name
+        target_dir.mkdir(exist_ok=True)
+        
+        # Save JSON report
+        json_filename = target_dir / "assessment.json"
+        with open(json_filename, 'w', encoding='utf-8') as f:
             json.dump(report_data, f, indent=2, ensure_ascii=False)
-        print(f"\n{Fore.GREEN}✅ Professional report saved to: {filename}")
+        
+        # Also save a text summary
+        txt_filename = target_dir / "summary.txt"
+        with open(txt_filename, 'w', encoding='utf-8') as f:
+            f.write(f"WordPress Security Assessment - {self.target}\n")
+            f.write(f"Assessment Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("="*60 + "\n\n")
+            f.write(f"WordPress Version: {wp_version or 'Not detected'}\n")
+            f.write(f"PHP Version: {php_version or 'Not detected'}\n")
+            f.write(f"WordPress API: {'Detected' if self.static_indicators.get('wp_rest_api_enabled') else 'Not detected'}\n")
+            f.write(f"Posture Indicators: {posture_count}\n")
+            f.write(f"Behavioral Patterns: {behavior_count}\n")
+            f.write(f"Contextual Analyses: {len(self.reality_context)}\n\n")
+            
+            if wp_version and 'security_notes' in report_data.get('observations', {}):
+                for indicator in report_data['observations']['posture_indicators']:
+                    if indicator.get('type') == 'WORDPRESS_VERSION_DISCLOSED' and indicator.get('security_notes'):
+                        f.write("Security Implications:\n")
+                        for note in indicator['security_notes']:
+                            f.write(f"  {note['severity']}: {note['note']}\n")
+                        break
+            
+            if php_version and php_version.startswith(('5.', '7.0', '7.1', '7.2', '7.3')):
+                f.write(f"\nPHP Security Note:\n")
+                f.write(f"  WARNING: PHP {php_version} is EOL or approaching EOL - security risk\n")
+        
+        print(f"\n{Fore.GREEN}✅ Professional reports saved to:")
+        print(f"   JSON: {json_filename}")
+        print(f"   Text: {txt_filename}")
         print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
 
     def run_assessment(self):
@@ -1097,35 +1615,102 @@ class ProfessionalWPAudit:
             import traceback
             traceback.print_exc()
 
+
 # ================================
 # MAIN EXECUTION
 # ================================
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <target_url>")
-        print(f"Example: {sys.argv[0]} https://example.com")
-        print(f"\nNote: This tool performs observational assessment only.")
-        print(f" No exploitation, authentication testing, or DoS testing.")
-        sys.exit(1)
-
-    target = sys.argv[1]
-    if not target.startswith(('http://', 'https://')):
-        target = f'http://{target}'
-
-    print(f"\n{Fore.CYAN}{'='*60}")
-    print("   PROFESSIONAL WORDPRESS OBSERVATIONAL ASSESSMENT")
-    print("   Method: Static Indicators + Behavioral Patterns")
-    print(f"{'='*60}{Style.RESET_ALL}\n")
-
-    print(f"{Fore.WHITE}Target: {target}")
-    print(f"Start Time: {datetime.now().strftime('%H:%M:%S')}")
-    print(f"Scope: Observational patterns and server behavior analysis")
-    print(f"Enhanced Checks: PHP headers, WordPress API, plugin versions")
-    print(f"Note: This assessment does not attempt exploitation\n")
-
-    audit = ProfessionalWPAudit(target)
-    audit.run_assessment()
+    # Check for targets.txt file or command line argument
+    import os
+    
+    if len(sys.argv) == 2:
+        # Single target from command line
+        target = sys.argv[1]
+        if not target.startswith(('http://', 'https://')):
+            target = f'http://{target}'
+        
+        print(f"\n{Fore.CYAN}{'='*60}")
+        print("   PROFESSIONAL WORDPRESS OBSERVATIONAL ASSESSMENT")
+        print("   Method: Static Indicators + Behavioral Patterns")
+        print("   Enhanced with Advanced WordPress Version Detection")
+        print(f"{'='*60}{Style.RESET_ALL}\n")
+        
+        print(f"{Fore.WHITE}Target: {target}")
+        print(f"Start Time: {datetime.now().strftime('%H:%M:%S')}")
+        print(f"Scope: Observational patterns and server behavior analysis")
+        print(f"Enhanced Checks: PHP headers, WordPress API, plugin versions")
+        print(f"Note: This assessment does not attempt exploitation\n")
+        
+        audit = ProfessionalWPAudit(target)
+        audit.run_assessment()
+        
+    else:
+        # Multi-target from targets.txt
+        targets_file = "targets.txt"
+        
+        if not os.path.exists(targets_file):
+            print(f"{Fore.RED}Error: File '{targets_file}' not found.")
+            print(f"Please create {targets_file} with one target URL per line.")
+            print(f"Or use: {sys.argv[0]} <single_target_url>")
+            sys.exit(1)
+        
+        try:
+            with open(targets_file, 'r') as f:
+                targets = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        except Exception as e:
+            print(f"{Fore.RED}Error reading targets.txt: {e}")
+            sys.exit(1)
+        
+        if not targets:
+            print(f"{Fore.RED}Error: No targets found in '{targets_file}'")
+            sys.exit(1)
+        
+        print(f"\n{Fore.CYAN}{'='*60}")
+        print("   PROFESSIONAL WORDPRESS OBSERVATIONAL ASSESSMENT")
+        print("   Enhanced with Advanced WordPress Version Detection")
+        print("   PHP Version Checking + WP API Analysis + Plugin Version Detection")
+        print(f"{'='*60}{Style.RESET_ALL}\n")
+        
+        print(f"{Fore.WHITE}Targets file: {targets_file}")
+        print(f"Number of targets: {len(targets)}")
+        print(f"Start Time: {datetime.now().strftime('%H:%M:%S')}")
+        print(f"Scope: WordPress version detection + observational analysis")
+        print(f"Version Detection Methods: 7 different techniques")
+        print(f"PHP Checking: Across 6 endpoints")
+        print(f"Plugin Checking: 4 specific plugins")
+        print(f"Note: This assessment does not attempt exploitation\n")
+        
+        # Process each target
+        for i, target in enumerate(targets, 1):
+            print(f"\n{Fore.YELLOW}🔍 Processing target {i}/{len(targets)}: {target}")
+            print(f"{'-'*60}")
+            
+            # Add scheme if missing
+            if not target.startswith(('http://', 'https://')):
+                target = f'http://{target}'
+            
+            try:
+                audit = ProfessionalWPAudit(target)
+                audit.run_assessment()
+            except KeyboardInterrupt:
+                print(f"\n{Fore.YELLOW}⚠ Assessment interrupted by user.")
+                sys.exit(1)
+            except Exception as e:
+                print(f"{Fore.RED}❌ Error processing {target}: {str(e)[:100]}")
+                import traceback
+                traceback.print_exc()
+                print()
+                continue
+            
+            # Add delay between targets (except last one)
+            if i < len(targets):
+                print(f"{Fore.CYAN}⏳ Waiting 2 seconds before next target...")
+                time.sleep(2)
+        
+        print(f"\n{Fore.GREEN}{'='*60}")
+        print(f"✅ All {len(targets)} targets processed successfully!")
+        print(f"{'='*60}{Style.RESET_ALL}")
 
 if __name__ == '__main__':
     main()
