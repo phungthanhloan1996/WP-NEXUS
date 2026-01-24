@@ -1,0 +1,1047 @@
+[
+  {
+    "domain": "ce-center.org.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": "5.7.14",
+    "plugin_count": 10,
+    "vulnerable_plugins": 0,
+    "php_version": "7.4.33",
+    "timestamp": 1769269074.9115012
+  },
+  {
+    "domain": "tino.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 20,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269169.2684438
+  },
+  {
+    "domain": "wpturbo.dev",
+    "score": 40,
+    "level": "MEDIUM",
+    "color_code": "\u001b[33m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 3,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269262.6465347
+  },
+  {
+    "domain": "xaydungancu.com.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (6 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269290.0304947
+  },
+  {
+    "domain": "sob.ueh.edu.vn",
+    "score": 65,
+    "level": "HIGH",
+    "color_code": "\u001b[93m",
+    "findings": [
+      "Uploads directory listing enabled",
+      "User enumeration possible (1 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269290.0305161
+  },
+  {
+    "domain": "bigstep.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269313.1993341
+  },
+  {
+    "domain": "bammihanquoc.vn",
+    "score": 80,
+    "level": "CRITICAL",
+    "color_code": "\u001b[91m",
+    "findings": [
+      "wp-config.php exposed"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269354.7695315
+  },
+  {
+    "domain": "comtrap.com.br",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269395.1139326
+  },
+  {
+    "domain": "muathemewp.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269403.914724
+  },
+  {
+    "domain": "azweb.com.vn",
+    "score": 10,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (2 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269409.9241216
+  },
+  {
+    "domain": "dichvuvietbaiseo.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": "6.6.1",
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269411.7590356
+  },
+  {
+    "domain": "pulsedive.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269412.0959573
+  },
+  {
+    "domain": "hostify.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 2,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269415.8491216
+  },
+  {
+    "domain": "pinehillsecocamp.com",
+    "score": 5,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (1 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269417.3459878
+  },
+  {
+    "domain": "site-baf.fr",
+    "score": 20,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (4 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.6.4",
+    "plugin_count": 3,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269419.631158
+  },
+  {
+    "domain": "netweb.io.vn",
+    "score": 15,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (3 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269420.1906304
+  },
+  {
+    "domain": "tnhelearning.edu.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (6 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 7,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269424.3838763
+  },
+  {
+    "domain": "taynamsolution.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769269433.3246102
+  },
+  {
+    "domain": "baexpress.vn",
+    "score": 40,
+    "level": "MEDIUM",
+    "color_code": "\u001b[33m",
+    "findings": [
+      "User enumeration possible (8 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.8.3",
+    "plugin_count": 20,
+    "vulnerable_plugins": 0,
+    "php_version": "8.2.29",
+    "timestamp": 1769269444.0244217
+  },
+  {
+    "domain": "bkhost.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270643.026664
+  },
+  {
+    "domain": "supernet.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": "5.8.12",
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270643.3163211
+  },
+  {
+    "domain": "thuanducjsc.com.vn",
+    "score": 20,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (4 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": "8.2.29",
+    "timestamp": 1769270663.611669
+  },
+  {
+    "domain": "breastresearchawareness.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270729.2572198
+  },
+  {
+    "domain": "tino.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270746.0183353
+  },
+  {
+    "domain": "themewp.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (8 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270763.3107069
+  },
+  {
+    "domain": "wpturbo.dev",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270790.048146
+  },
+  {
+    "domain": "bizfly.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270794.1387746
+  },
+  {
+    "domain": "netweb.io.vn",
+    "score": 10,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (2 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 3,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270798.9099963
+  },
+  {
+    "domain": "mmcommunications.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270811.1026034
+  },
+  {
+    "domain": "tnhelearning.edu.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (7 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 6,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270820.5212789
+  },
+  {
+    "domain": "sob.ueh.edu.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (11 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": "7.4.33",
+    "timestamp": 1769270821.37906
+  },
+  {
+    "domain": "xaydungancu.com.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (6 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": "7.4.33",
+    "timestamp": 1769270822.6530135
+  },
+  {
+    "domain": "baexpress.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (8 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.8.3",
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": "8.2.29",
+    "timestamp": 1769270835.4159634
+  },
+  {
+    "domain": "templaza.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 10,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270857.5573492
+  },
+  {
+    "domain": "wplearninglab.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270866.1289296
+  },
+  {
+    "domain": "dorkplus.com",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 6,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270880.837281
+  },
+  {
+    "domain": "coopusmania.com",
+    "score": 15,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (3 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 5,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270884.5012264
+  },
+  {
+    "domain": "dhen.co.zw",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270886.1600337
+  },
+  {
+    "domain": "site-baf.fr",
+    "score": 100,
+    "level": "CRITICAL",
+    "color_code": "\u001b[91m",
+    "findings": [
+      "PHP 7.4: 3 CVEs",
+      "User enumeration possible (4 users)"
+    ],
+    "cves": [
+      "CVE-2022-31625",
+      "CVE-2022-31626",
+      "CVE-2022-22776"
+    ],
+    "wp_version": null,
+    "plugin_count": 4,
+    "vulnerable_plugins": 0,
+    "php_version": "7.4",
+    "timestamp": 1769270892.15177
+  },
+  {
+    "domain": "hwp.com.vn",
+    "score": 10,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (2 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": "7.4.33",
+    "timestamp": 1769270896.0066607
+  },
+  {
+    "domain": "netweb.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (6 users)"
+    ],
+    "cves": [],
+    "wp_version": "5.8.12",
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270902.9499586
+  },
+  {
+    "domain": "phongmy.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (9 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.8.3",
+    "plugin_count": 2,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270903.086678
+  },
+  {
+    "domain": "readmedium.com",
+    "score": 100,
+    "level": "CRITICAL",
+    "color_code": "\u001b[91m",
+    "findings": [
+      "wp-config.php exposed",
+      "User enumeration possible (5 users)",
+      "Backup files found: 2"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270906.149421
+  },
+  {
+    "domain": "download.com.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 10,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270908.7473395
+  },
+  {
+    "domain": "alovoice.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 5,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270909.1747677
+  },
+  {
+    "domain": "muathemewp.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": "7.4.33",
+    "timestamp": 1769270913.0846555
+  },
+  {
+    "domain": "taynamsolution.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270918.9745982
+  },
+  {
+    "domain": "themesinfo.com",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 2,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270926.66968
+  },
+  {
+    "domain": "webtechsurvey.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270928.5911124
+  },
+  {
+    "domain": "hostingviet.vn",
+    "score": 20,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (4 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.3.1",
+    "plugin_count": 3,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270929.1352162
+  },
+  {
+    "domain": "kdata.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270929.7672668
+  },
+  {
+    "domain": "wpcore.com",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270930.5293965
+  },
+  {
+    "domain": "w3.ataiva.com",
+    "score": 100,
+    "level": "CRITICAL",
+    "color_code": "\u001b[91m",
+    "findings": [
+      "wp-config.php exposed",
+      "User enumeration possible (4 users)",
+      "Backup files found: 1"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": "8.2.9",
+    "timestamp": 1769270931.2356029
+  },
+  {
+    "domain": "user.com.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (10 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": "7.4.33",
+    "timestamp": 1769270931.3050115
+  },
+  {
+    "domain": "vinahost.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 11,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270932.2385223
+  },
+  {
+    "domain": "lamastrock.com",
+    "score": 85,
+    "level": "CRITICAL",
+    "color_code": "\u001b[91m",
+    "findings": [
+      "Uploads directory listing enabled",
+      "User enumeration possible (7 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 3,
+    "vulnerable_plugins": 0,
+    "php_version": "8.3",
+    "timestamp": 1769270933.9630837
+  },
+  {
+    "domain": "halomedia.com.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": "8.3.28",
+    "timestamp": 1769270933.9887626
+  },
+  {
+    "domain": "blog.nintechnet.com",
+    "score": 5,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (1 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270934.8168864
+  },
+  {
+    "domain": "vietnetwork.vn",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270936.7266874
+  },
+  {
+    "domain": "pinehillsecocamp.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": "8.3.28",
+    "timestamp": 1769270940.749056
+  },
+  {
+    "domain": "dichvuvietbaiseo.vn",
+    "score": 10,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (2 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.6.1",
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270940.8252947
+  },
+  {
+    "domain": "bhgrecareer.com",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 7,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270941.0237005
+  },
+  {
+    "domain": "fptshop.com.vn",
+    "score": 15,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (3 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 3,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270941.7549531
+  },
+  {
+    "domain": "dealonevn.wordpress.com",
+    "score": 15,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [
+      "User enumeration possible (3 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 2,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270953.2192023
+  },
+  {
+    "domain": "barroca.com.br",
+    "score": 20,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (4 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 8,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270960.5227556
+  },
+  {
+    "domain": "zhost.vn",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (13 users)"
+    ],
+    "cves": [],
+    "wp_version": "6.9",
+    "plugin_count": 0,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270961.1203039
+  },
+  {
+    "domain": "vanthanh99vn.wordpress.com",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 2,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270962.160437
+  },
+  {
+    "domain": "onestore.kyiv.ua",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270962.5886974
+  },
+  {
+    "domain": "themetix.com",
+    "score": 20,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (4 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 4,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270964.6763237
+  },
+  {
+    "domain": "allisonluciennephotography.com",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 4,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270965.8092337
+  },
+  {
+    "domain": "siterankdata.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 1,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270966.6705081
+  },
+  {
+    "domain": "10web.io",
+    "score": 25,
+    "level": "LOW",
+    "color_code": "\u001b[92m",
+    "findings": [
+      "User enumeration possible (5 users)"
+    ],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769270967.1810374
+  }
+]
