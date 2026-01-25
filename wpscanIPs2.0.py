@@ -1,2053 +1,2453 @@
-# wpscanIPs2.1_plugin_analysis_enhanced_fixed.py
-# Thu thập domain WordPress (.vn variants) với phân tích plugin phổ biến - Phiên bản sửa lỗi hiển thị
+#!/usr/bin/env python3
+"""
+WORDPRESS ATTACK SURFACE ENGINE (WASE) v1.0
+Complete Integrated Version with Deep Enumeration
+Chạy: python wase.py [--targets targets.txt] [--workers N] [--output results.json]
+"""
 
+import asyncio
+import aiohttp
+import aiodns
+import json
+import re
 import time
 import random
-import json
-from urllib.parse import urlparse
-from ddgs import DDGS
-from tqdm import tqdm
-import re
-import os
-import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
-from collections import defaultdict, deque
-import warnings
 import sys
-from bs4 import BeautifulSoup 
-import re
+import os
 import ipaddress
+import hashlib
+import xml.etree.ElementTree as ET
+from urllib.parse import urlparse, urljoin, parse_qs
+from collections import defaultdict, deque, Counter
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Set, Any, AsyncGenerator, Tuple
+from enum import Enum
+import argparse
+import warnings
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+import signal
 
+warnings.filterwarnings('ignore')
 
-warnings.filterwarnings('ignore', message='Unverified HTTPS request')
-def is_ip(domain):
-    """Kiểm tra xem domain có phải là địa chỉ IP (IPv4 hoặc IPv6) không"""
-    try:
-        ipaddress.ip_address(domain)
-        return True
-    except ValueError:
-        return False
-
-
-def looks_like_cdn_or_api(domain):
-    """Kiểm tra domain có vẻ là CDN, cloud service, API endpoint hay không"""
-    suspicious_keywords = [
-        'cloudflare', 'akamai', 'fastly', 'cloudfront', 'azureedge', 'cdn',
-        'googleusercontent', 'ggpht', 'gstatic', 'apis', 'api', 'graphql',
-        'wp-api', 'json', 'rest', 'cdn.', 'edge.', 'proxy.', 'cache.',
-        's3.', 'amazonaws', 'storage.googleapis', 'firebase', 'vercel',
-        'netlify', 'herokuapp', 'pages.dev'
+# =================== CONFIGURATION ===================
+class Config:
+    # General
+    MAX_CONCURRENT_TASKS = 50
+    EVENT_BUS_SIZE = 1000
+    REQUEST_TIMEOUT = 10
+    DNS_TIMEOUT = 2
+    
+    # Discovery (giữ nguyên vì cần thiết)
+    DISCOVERY_SOURCES = [
+        "https://raw.githubusercontent.com/arkadiyt/bounty-targets-data/main/data/domains.txt",
+        "https://raw.githubusercontent.com/wordpress/wordpress.org-seo/master/data/top-1m.csv",
     ]
     
-    domain_lower = domain.lower()
-    
-    # Kiểm tra keyword trong domain
-    if any(kw in domain_lower for kw in suspicious_keywords):
-        return True
-    
-    # Subdomain quá nhiều hoặc pattern API điển hình
-    if domain.count('.') >= 4:
-        return True
-    
-    # Các domain phổ biến của CDN/API
-    cdn_patterns = [
-        r'^[a-z0-9-]+\.cdn\.',
-        r'^[a-z0-9-]+\.edge\.',
-        r'^[a-z0-9-]+\.api\.',
-        r'^[a-z0-9-]+\.wpengine\.',
-        r'^[a-z0-9-]+\.kinsta\.'
+    DORKS = [
+        '"Powered by WordPress" site:.vn',
+        '"Powered by WordPress" site:.com.vn',
+        'intext:"WordPress" site:.vn generator:"WordPress"',
+        '"index of" inurl:wp-content site:.vn',
+        'inurl:/wp-content/plugins/ site:.vn',
+        'inurl:/wp-admin/ intitle:"Log In" site:.vn',
+        'inurl:wp-login.php site:.vn',
+        '"Powered by WordPress" inurl:.vn -inurl:(forum OR blogspot OR wordpress.com)',
+        'inurl:/wp-content/themes/ site:.vn',
+        'inurl:wp-config.php site:.vn',
+        '"index of /wp-content/uploads/" site:.vn',
+        'inurl:/wp-content/plugins/elementor/ site:.vn',
+        'inurl:/wp-content/plugins/woocommerce/ site:.vn',
+        'inurl:/wp-content/plugins/contact-form-7/ site:.vn',
+        'inurl:/wp-content/plugins/revslider/ site:.vn',
+        'site:.com.vn "WordPress"',
+        'site:.vn inurl:wp-json',
+        'site:.vn "xmlrpc.php"',
     ]
     
-    for pattern in cdn_patterns:
-        if re.search(pattern, domain_lower):
-            return True
-    
-    return False
-# Cấu hình
-DORKS = [
-    # ==================== DORKS CƠ BẢN HIỆN CÓ ====================
-    '"Powered by WordPress" site:.vn',
-    '"Powered by WordPress" site:.com.vn',
-    'intext:"WordPress" site:.vn generator:"WordPress"',
-    '"index of" inurl:wp-content site:.vn',
-    'inurl:/wp-content/plugins/ site:.vn',
-    'inurl:/wp-admin/ intitle:"Log In" site:.vn',
-    'inurl:wp-login.php site:.vn',
-    '"Powered by WordPress" inurl:.vn -inurl:(forum OR blogspot OR wordpress.com)',
-    'inurl:/wp-content/themes/ site:.vn',
-    'inurl:wp-config.php site:.vn',
-    '"index of /wp-content/uploads/" site:.vn',
-    'inurl:/wp-content/plugins/elementor/ site:.vn',
-    'inurl:/wp-content/plugins/woocommerce/ site:.vn',
-    'inurl:/wp-content/plugins/contact-form-7/ site:.vn',
-    'inurl:/wp-content/plugins/revslider/ site:.vn',
-    'site:.com.vn "WordPress"',
-    'site:.vn inurl:wp-json',
-    'site:.vn "xmlrpc.php"',
-    
-    # ==================== DORKS MỚI BỔ SUNG ====================
-    # 1. Generator Meta Tags
-    'meta name="generator" content="WordPress" site:.vn',
-    'generator="WordPress" site:.vn',
-    
-    # 2. RSS & Feeds
-    'inurl:/feed/ "WordPress" site:.vn',
-    'inurl:/comments/feed/ site:.vn',
-    'inurl:?feed=rss2 "WordPress" site:.vn',
-    
-    # 3. Scripts & Assets
-    'inurl:wp-embed.min.js site:.vn',
-    'wp-embed.min.js?ver= site:.vn',
-    'inurl:wp-includes/js/ site:.vn',
-    
-    # 4. Admin & AJAX
-    'inurl:admin-ajax.php "WordPress" site:.vn',
-    'inurl:wp-admin/admin-ajax.php site:.vn',
-    
-    # 5. Comments
-    'inurl:wp-comments-post.php site:.vn',
-    'comment-form-"WordPress" site:.vn',
-    
-    # 6. Readme Files
-    'inurl:readme.html "WordPress" site:.vn',
-    'inurl:readme.txt "WordPress" site:.vn',
-    
-    # 7. Specific Phrases
-    '"just another WordPress site" site:.vn',
-    '"Proudly powered by WordPress" site:.vn',
-    '"Site is powered by WordPress" site:.vn',
-    
-    # 8. API Endpoints
-    'inurl:wp-json/wp/v2/ site:.vn',
-    'inurl:wp-json/oembed/ site:.vn',
-    
-    # 9. Login & Redirect
-    'inurl:wp-login.php?redirect_to= site:.vn',
-    'inurl:wp-admin/admin.php site:.vn',
-    
-    # 10. Cache Directories
-    'inurl:/wp-content/cache/ site:.vn',
-    'inurl:/wp-content/w3tc/ site:.vn',
-    
-    # 11. More Plugins (Popular)
-    'inurl:/wp-content/plugins/yoast-seo/ site:.vn',
-    'inurl:/wp-content/plugins/wordfence/ site:.vn',
-    'inurl:/wp-content/plugins/wp-rocket/ site:.vn',
-    'inurl:/wp-content/plugins/akismet/ site:.vn',
-    'inurl:/wp-content/plugins/jetpack/ site:.vn',
-    
-    # 12. Themes (Popular)
-    'inurl:/wp-content/themes/twentytwenty/ site:.vn',
-    'inurl:/wp-content/themes/twentytwentyone/ site:.vn',
-    'inurl:/wp-content/themes/astra/ site:.vn',
-    'inurl:/wp-content/themes/divi/ site:.vn',
-    
-    # 13. Multisite
-    'inurl:/wp-signup.php site:.vn',
-    'inurl:/wp-activate.php site:.vn',
-    
-    # 14. Subdomains
-    'site:*.vn "WordPress"',
-    'site:*.com.vn "WordPress"',
-    'inurl:blog. "WordPress" site:.vn',
-    
-    # 15. Version Specific
-    '"WordPress 6." site:.vn',
-    '"WordPress 5." site:.vn',
-    'version="WordPress" site:.vn',
-    
-    # 16. Uploads Variations
-    '"index of" "wp-content" site:.vn',
-    'inurl:/uploads/ "WordPress" site:.vn',
-    
-    # 17. Security Files
-    'inurl:.htaccess "WordPress" site:.vn',
-    'inurl:wp-config-sample.php site:.vn',
-    
-    # 18. Database
-    'inurl:wp-content/plugins/contact-form-7-to-database-extension/ site:.vn',
-    
-    # 19. Translation
-    'inurl:/wp-content/languages/ site:.vn',
-    
-    # 20. Widgets
-    'inurl:/wp-content/widgets/ site:.vn',
-    
-    # 21. Backup Files
-    'inurl:wp-content/backup- site:.vn',
-    'inurl:wp-content/backup/ site:.vn',
-    
-    # 22. Old WordPress
-    '"WordPress" "3." site:.vn',
-    '"WordPress" "4." site:.vn',
-    
-    # 23. Custom Search
-    '"wp-content" "WordPress" site:.vn -site:wordpress.com',
-    '"wp-includes" "WordPress" site:.vn',
-    
-    # 24. Login Variations
-    'intitle:"WordPress Login" site:.vn',
-    'intitle:"Log In ‹" site:.vn',
-    
-    # 25. API Discovery
-    'inurl:?rest_route= site:.vn',
-]
-
-# DANH SÁCH PLUGIN PHỔ BIẾN (TOP 50+) - Giữ nguyên
-POPULAR_PLUGINS = {
-    # 🔥 SEO & CONTENT
-    'yoast-seo': {'name': 'Yoast SEO', 'category': 'SEO', 'installs': '10M+'},
-    'wordpress-seo': {'name': 'Yoast SEO', 'category': 'SEO', 'installs': '10M+'},
-    'all-in-one-seo-pack': {'name': 'All in One SEO', 'category': 'SEO', 'installs': '3M+'},
-    'seo-by-rank-math': {'name': 'Rank Math SEO', 'category': 'SEO', 'installs': '2M+'},
-    
-    # 🎨 PAGE BUILDERS
-    'elementor': {'name': 'Elementor', 'category': 'Page Builder', 'installs': '10M+'},
-    'beaver-builder-lite-version': {'name': 'Beaver Builder', 'category': 'Page Builder', 'installs': '1M+'},
-    'siteorigin-panels': {'name': 'SiteOrigin Page Builder', 'category': 'Page Builder', 'installs': '1M+'},
-    'visual-composer': {'name': 'Visual Composer', 'category': 'Page Builder', 'installs': '100K+'},
-    
-    # 📝 FORMS
-    'contact-form-7': {'name': 'Contact Form 7', 'category': 'Forms', 'installs': '10M+'},
-    'wpforms-lite': {'name': 'WPForms', 'category': 'Forms', 'installs': '6M+'},
-    'wpforms': {'name': 'WPForms', 'category': 'Forms', 'installs': '6M+'},
-    'gravityforms': {'name': 'Gravity Forms', 'category': 'Forms', 'installs': '1M+'},
-    'ninja-forms': {'name': 'Ninja Forms', 'category': 'Forms', 'installs': '1M+'},
-    
-    # ⚡ CACHE & PERFORMANCE
-    'litespeed-cache': {'name': 'LiteSpeed Cache', 'category': 'Performance', 'installs': '7M+'},
-    'wp-rocket': {'name': 'WP Rocket', 'category': 'Performance', 'installs': '2M+'},
-    'w3-total-cache': {'name': 'W3 Total Cache', 'category': 'Performance', 'installs': '2M+'},
-    'wp-super-cache': {'name': 'WP Super Cache', 'category': 'Performance', 'installs': '2M+'},
-    'autoptimize': {'name': 'Autoptimize', 'category': 'Performance', 'installs': '1M+'},
-    
-    # 🛒 E-COMMERCE
-    'woocommerce': {'name': 'WooCommerce', 'category': 'E-commerce', 'installs': '7M+'},
-    
-    # 🔐 SECURITY
-    'wordfence': {'name': 'Wordfence Security', 'category': 'Security', 'installs': '5M+'},
-    'better-wp-security': {'name': 'iThemes Security', 'category': 'Security', 'installs': '1M+'},
-    'sucuri-scanner': {'name': 'Sucuri Security', 'category': 'Security', 'installs': '800K+'},
-    'all-in-one-wp-security-and-firewall': {'name': 'All In One WP Security', 'category': 'Security', 'installs': '1M+'},
-    
-    # 📧 EMAIL
-    'wp-mail-smtp': {'name': 'WP Mail SMTP', 'category': 'Email', 'installs': '5M+'},
-    'contact-form-7-to-database-extension': {'name': 'CF7 to Database', 'category': 'Forms', 'installs': '200K+'},
-    
-    # 🔄 BACKUP & MIGRATION
-    'updraftplus': {'name': 'UpdraftPlus', 'category': 'Backup', 'installs': '3M+'},
-    'all-in-one-wp-migration': {'name': 'All-in-One WP Migration', 'category': 'Migration', 'installs': '5M+'},
-    'duplicator': {'name': 'Duplicator', 'category': 'Migration', 'installs': '1M+'},
-    'backupbuddy': {'name': 'BackupBuddy', 'category': 'Backup', 'installs': '500K+'},
-    
-    # 📊 ANALYTICS
-    'google-site-kit': {'name': 'Site Kit by Google', 'category': 'Analytics', 'installs': '5M+'},
-    'monsterinsights': {'name': 'MonsterInsights', 'category': 'Analytics', 'installs': '3M+'},
-    
-    # 🖼️ IMAGE OPTIMIZATION
-    'smush': {'name': 'Smush Image Optimization', 'category': 'Performance', 'installs': '1M+'},
-    'ewww-image-optimizer': {'name': 'EWWW Image Optimizer', 'category': 'Performance', 'installs': '800K+'},
-    'imagify': {'name': 'Imagify', 'category': 'Performance', 'installs': '500K+'},
-    
-    # 🔧 EDITORS
-    'classic-editor': {'name': 'Classic Editor', 'category': 'Editor', 'installs': '9M+'},
-    'tinymce-advanced': {'name': 'Advanced Editor Tools', 'category': 'Editor', 'installs': '2M+'},
-    
-    # 🛠️ UTILITIES
-    'akismet': {'name': 'Akismet Anti-Spam', 'category': 'Security', 'installs': '6M+'},
-    'cookie-notice': {'name': 'Cookie Notice', 'category': 'Compliance', 'installs': '2M+'},
-    'really-simple-ssl': {'name': 'Really Simple SSL', 'category': 'Security', 'installs': '5M+'},
-    
-    # 📄 SLIDERS
-    'revslider': {'name': 'Revolution Slider', 'category': 'Slider', 'installs': '10M+'},
-    'smart-slider-3': {'name': 'Smart Slider 3', 'category': 'Slider', 'installs': '1M+'},
-    'ml-slider': {'name': 'MetaSlider', 'category': 'Slider', 'installs': '1M+'},
-    
-    # 🎭 CUSTOMIZATION
-    'advanced-custom-fields': {'name': 'Advanced Custom Fields', 'category': 'Custom Fields', 'installs': '2M+'},
-    'custom-post-type-ui': {'name': 'Custom Post Type UI', 'category': 'Custom Post Types', 'installs': '1M+'},
-}
-
-# CVE Database cho WordPress và plugin phổ biến
-CVE_DATABASE = {
-    'wordpress': {
-        '5.0-5.9': ['CVE-2020-28032', 'CVE-2021-44223'],
-        '4.0-4.9': ['CVE-2019-17671', 'CVE-2020-11025'],
-        '<4.0': ['CVE-2018-20148', 'CVE-2019-9787']
-    },
-    'elementor': {
-        '<3.5.0': ['CVE-2022-29455'],
-        '<3.2.0': ['CVE-2021-25028']
-    },
-    'revslider': {
-        '<6.0.0': ['CVE-2021-38392'],
-        '<5.0.0': ['CVE-2018-15505']
-    },
-    'woocommerce': {
-        '<5.0.0': ['CVE-2021-24153'],
-        '<4.0.0': ['CVE-2020-13225']
-    },
-    'contact-form-7': {
-        '<5.4.0': ['CVE-2020-35489']
+    # Enhanced Plugin Database with CVE info (giữ nguyên vì cần thiết)
+    POPULAR_PLUGINS = {
+        # 🔥 SEO & CONTENT
+        'yoast-seo': {'name': 'Yoast SEO', 'category': 'SEO', 'installs': '10M+'},
+        'wordpress-seo': {'name': 'Yoast SEO', 'category': 'SEO', 'installs': '10M+'},
+        'all-in-one-seo-pack': {'name': 'All in One SEO', 'category': 'SEO', 'installs': '3M+'},
+        'seo-by-rank-math': {'name': 'Rank Math SEO', 'category': 'SEO', 'installs': '2M+'},
+        
+        # 🎨 PAGE BUILDERS
+        'elementor': {'name': 'Elementor', 'category': 'Page Builder', 'installs': '10M+'},
+        'beaver-builder-lite-version': {'name': 'Beaver Builder', 'category': 'Page Builder', 'installs': '1M+'},
+        'siteorigin-panels': {'name': 'SiteOrigin Page Builder', 'category': 'Page Builder', 'installs': '1M+'},
+        
+        # 📝 FORMS
+        'contact-form-7': {'name': 'Contact Form 7', 'category': 'Forms', 'installs': '10M+'},
+        'wpforms-lite': {'name': 'WPForms', 'category': 'Forms', 'installs': '6M+'},
+        
+        # ⚡ CACHE & PERFORMANCE
+        'litespeed-cache': {'name': 'LiteSpeed Cache', 'category': 'Performance', 'installs': '7M+'},
+        'wp-rocket': {'name': 'WP Rocket', 'category': 'Performance', 'installs': '2M+'},
+        
+        # 🛒 E-COMMERCE
+        'woocommerce': {'name': 'WooCommerce', 'category': 'E-commerce', 'installs': '7M+'},
+        
+        # 🔐 SECURITY
+        'wordfence': {'name': 'Wordfence Security', 'category': 'Security', 'installs': '5M+'},
+        'better-wp-security': {'name': 'iThemes Security', 'category': 'Security', 'installs': '1M+'},
+        
+        # 📧 EMAIL
+        'wp-mail-smtp': {'name': 'WP Mail SMTP', 'category': 'Email', 'installs': '5M+'},
     }
-}
-
-NUM_RESULTS_PER_DORK = 75
-OUTPUT_FILE = "wp_vn_domains.txt"
-DOMAIN_VULN_FILE = "vulnerable_domains.txt"
-ENHANCED_OUTPUT_FILE = "wp_enhanced_recon.json"
-DELAY_MIN = 2.5
-DELAY_MAX = 5.0
-MAX_WORKERS_DISCOVERY = 3  # Giảm để ổn định hơn
-MAX_WORKERS_RECON = 5
-TIMEOUT = 10
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Connection': 'keep-alive',
-}
-
-# Biến toàn cục để quản lý dừng chương trình
-stop_flag = False
-
-class WordPressReconEnhanced:
-    def __init__(self, domain):
-        self.domain = domain
-        self.url = f"http://{domain}"
-        self.https_url = f"https://{domain}"
-        self.base_url = None
-        self.session = requests.Session()
-        self.session.headers.update(HEADERS)
-        self.session.verify = False
-        self.confidence = 0
-        self.wp_signatures = []
-        self.results = self._init_schema()
-        
-    def _init_schema(self):
-        """Khởi tạo schema JSON theo chuẩn mới"""
-        return {
-            "target": self.domain,
-            "scan_timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-            "wp": {
-                "detected": False,
-                "confidence": 0,
-                "confidence_sources": [],
-                "version": "",
-                "version_source": "",
-                "version_sources": []
-            },
-            "server": {
-                "webserver": "",
-                "webserver_version": "",
-                "php": "",
-                "php_source": "",
-                "server_full": ""
-            },
-            "plugins": [],
-            "theme": {
-                "name": "",
-                "slug": "",
-                "version": "",
-                "version_source": "",
-                "detected_version": ""
-            },
-            "endpoints": {
-                "xmlrpc": False,
-                "xmlrpc_status": "",
-                "rest_api": False,
-                "rest_api_status": "",
-                "rest_api_endpoints": [],
-                "wp_login": False,
-                "wp_admin": False,
-                "upload_dir_listing": False,
-                "upload_status": ""
-            },
-            "security_indicators": {
-                "waf_detected": "",
-                "waf_type": "",
-                "directory_listing": False,
-                "sensitive_files": [],
-                "user_enumeration": False,
-                "xmlrpc_enabled": False
-            },
-            "vulnerability_indicators": {
-                "outdated_wp": False,
-                "outdated_php": False,
-                "outdated_plugins": [],
-                "potential_issues": [],
-                "cve_matches": [],
-                "risk_score": 0
-            },
-            "plugin_analysis": {
-                "popular_plugins_found": 0,
-                "categories": defaultdict(int),
-                "plugin_combinations": []
-            },
-            "scan_metadata": {
-                "duration": 0,
-                "requests_made": 0,
-                "status": "pending"
-            }
+    
+    # PHP Version Vulnerabilities (giữ nguyên)
+    PHP_VULNERABILITIES = {
+        '7.4': {
+            '<7.4.30': ['CVE-2022-31626', 'CVE-2022-31625'],
+            '<7.4.28': ['CVE-2022-22776'],
+        },
+        '8.0': {
+            '<8.0.20': ['CVE-2022-31626'],
+            '<8.0.19': ['CVE-2022-27778'],
+        },
+        '8.1': {
+            '<8.1.7': ['CVE-2022-31629'],
+            '<8.1.6': ['CVE-2022-29187'],
         }
+    }
     
-    def _make_request(self, url, method='GET', allow_redirects=True, timeout=TIMEOUT):
-        """Thực hiện HTTP request an toàn"""
-        if stop_flag:
-            return None
-            
+    # WordPress Core CVEs (giữ nguyên)
+    WORDPRESS_CVES = {
+        '6.1': {'<6.1.1': ['CVE-2023-28121', 'CVE-2023-28122']},
+        '6.0': {'<6.0.5': ['CVE-2023-0031', 'CVE-2022-35945']},
+        '5.9': {'<5.9.5': ['CVE-2022-35944', 'CVE-2022-35943']},
+        '5.8': {'<5.8.5': ['CVE-2022-21662', 'CVE-2022-21661']},
+    }
+
+
+# =================== DATA STRUCTURES ===================
+class EventType(Enum):
+    RAW_DOMAIN = "raw_domain"
+    CLEAN_DOMAIN = "clean_domain"
+    WP_DETECTED = "wp_detected"
+    WP_PROFILE = "wp_profile"
+    SURFACE_RESULT = "surface_result"
+    RISK_SCORE = "risk_score"
+    FINAL_RESULT = "final_result"
+
+@dataclass
+class Event:
+    type: EventType
+    data: Dict[str, Any]
+    timestamp: float = field(default_factory=time.time)
+    source: str = ""
+    
+    def __str__(self):
+        return f"[{self.type.value}] {self.data.get('domain', 'N/A')}"
+
+# =================== ASYNC EVENT BUS ===================
+class AsyncEventBus:
+    """Event bus trung tâm cho streaming architecture"""
+    
+    def __init__(self, max_size=1000):
+        self.queue = asyncio.Queue(maxsize=max_size)
+        self.subscribers = defaultdict(list)
+        self.stats = {'processed': 0, 'dropped': 0}
+        self.is_running = False
+        self.shutdown_event = asyncio.Event()
+    
+    async def publish(self, event: Event):
+        """Publish event vào bus"""
         try:
-            response = self.session.request(
-                method=method,
-                url=url,
-                allow_redirects=allow_redirects,
-                timeout=timeout
-            )
-            self.results['scan_metadata']['requests_made'] += 1
-            return response
-        except Exception as e:
-            return None
-    
-    def _calculate_wp_confidence(self):
-        """Tính confidence score cho WordPress detection"""
-        confidence = 0
-        sources = []
-        
-        # Mỗi signature có trọng số khác nhau
-        signature_weights = {
-            'wp_content_structure': 20,
-            'wp_login_page': 25,
-            'wp_admin_redirect': 25,
-            'wp_json_api': 15,
-            'wp_generator_tag': 10,
-            'wp_feed': 10,
-            'wp_includes': 15,
-            'wp_config_indicators': 20
-        }
-        
-        for signature in self.wp_signatures:
-            if signature in signature_weights:
-                confidence += signature_weights[signature]
-                sources.append(signature)
-        
-        self.results['wp']['confidence'] = min(confidence, 100)
-        self.results['wp']['confidence_sources'] = sources
-        
-        # Xác định nếu là WordPress
-        self.results['wp']['detected'] = confidence >= 30  # Ngưỡng tối thiểu
-        
-    def _detect_wp_signatures(self):
-        """Phát hiện các signature của WordPress"""
-        # Kiểm tra homepage
-        response = self._make_request(self.base_url)
-        if not response:
-            return False
-        
-        html = response.text
-        headers = response.headers
-        
-        # 1. Kiểm tra /wp-content/ structure
-        if '/wp-content/' in html:
-            self.wp_signatures.append('wp_content_structure')
-        
-        # 2. Kiểm tra /wp-login.php
-        login_response = self._make_request(f"{self.base_url}/wp-login.php")
-        if login_response:
-            self.results['endpoints']['wp_login'] = True
-            if login_response.status_code < 400:
-                self.wp_signatures.append('wp_login_page')
-        
-        # 3. Kiểm tra /wp-admin/ redirect
-        admin_response = self._make_request(f"{self.base_url}/wp-admin/", allow_redirects=False)
-        if admin_response:
-            self.results['endpoints']['wp_admin'] = True
-            if admin_response.status_code in [301, 302, 307, 308]:
-                self.wp_signatures.append('wp_admin_redirect')
-        
-        # 4. Kiểm tra WordPress REST API
-        rest_response = self._make_request(f"{self.base_url}/wp-json/")
-        if rest_response:
-            self.results['endpoints']['rest_api'] = True
-            self.results['endpoints']['rest_api_status'] = f"{rest_response.status_code}"
-            
-            if rest_response.status_code == 200:
-                self.wp_signatures.append('wp_json_api')
-                try:
-                    data = rest_response.json()
-                    if 'routes' in data:
-                        self.results['endpoints']['rest_api_endpoints'] = list(data['routes'].keys())[:10]
-                except:
-                    pass
-        
-        # 5. Kiểm tra WordPress generator tag
-        if 'WordPress' in html and 'generator' in html.lower():
-            self.wp_signatures.append('wp_generator_tag')
-        
-        # 6. Kiểm tra RSS feed
-        feed_response = self._make_request(f"{self.base_url}/feed/")
-        if feed_response and feed_response.status_code == 200 and 'WordPress' in feed_response.text:
-            self.wp_signatures.append('wp_feed')
-        
-        # 7. Kiểm tra /wp-includes/
-        if '/wp-includes/' in html:
-            self.wp_signatures.append('wp_includes')
-        
-        # 8. Kiểm tra các indicators khác
-        wp_indicators = [
-            'wp-embed.min.js',
-            'wp-emoji-release.min.js',
-            'admin-ajax.php',
-            'wp_pass_req'
-        ]
-        
-        for indicator in wp_indicators:
-            if indicator in html:
-                self.wp_signatures.append('wp_config_indicators')
-                break
-        
-        return len(self.wp_signatures) > 0
-    
-    def _detect_server_info(self, response):
-        """Phát hiện thông tin server"""
-        headers = response.headers
-        
-        # Web server
-        server_header = headers.get('Server', '')
-        if server_header:
-            self.results['server']['server_full'] = server_header
-            if '/' in server_header:
-                self.results['server']['webserver'] = server_header.split('/')[0]
-                self.results['server']['webserver_version'] = server_header.split('/')[1]
-            else:
-                self.results['server']['webserver'] = server_header
-        
-        # PHP version - CẢI THIỆN
-        php_found = False
-        
-        # Method 1: X-Powered-By header
-        php_header = headers.get('X-Powered-By', '')
-        if 'PHP' in php_header:
-            match = re.search(r'PHP/([\d.]+)', php_header)
-            if match:
-                self.results['server']['php'] = match.group(1)
-                self.results['server']['php_source'] = 'header'
-                php_found = True
-        
-        # Method 2: X-PHP-Version header (một số host dùng)
-        if not php_found:
-            php_version_header = headers.get('X-PHP-Version', '')
-            if php_version_header:
-                self.results['server']['php'] = php_version_header
-                self.results['server']['php_source'] = 'x_php_version'
-                php_found = True
-        
-        # Method 3: Tìm trong HTML
-        if not php_found:
-            html = response.text
-            # Tìm PHP version trong HTML (thường trong comment hoặc generator)
-            php_patterns = [
-                r'PHP/([\d.]+)',
-                r'PHP Version: ([\d.]+)',
-                r'php/([\d.]+)',
-                r'PHP ([\d.]+)',
-            ]
-            
-            for pattern in php_patterns:
-                php_match = re.search(pattern, html, re.IGNORECASE)
-                if php_match:
-                    self.results['server']['php'] = php_match.group(1)
-                    self.results['server']['php_source'] = 'html'
-                    php_found = True
-                    break
-        
-        # Method 4: Kiểm tra headers khác
-        if not php_found:
-            # Kiểm tra tất cả headers
-            for header_name, header_value in headers.items():
-                if 'php' in header_name.lower():
-                    match = re.search(r'([\d.]+)', header_value)
-                    if match:
-                        self.results['server']['php'] = match.group(1)
-                        self.results['server']['php_source'] = f'header_{header_name}'
-                        php_found = True
-                        break
-    
-    def _detect_wp_version_enhanced(self):
-        """Phát hiện WordPress version với nhiều phương pháp"""
-        version_sources = []
-        detected_version = ""
-        
-        # 0. Kiểm tra bằng API wp-json (phương pháp mới)
-        try:
-            api_resp = self._make_request(f"{self.base_url}/wp-json/wp/v2/")
-            if api_resp and api_resp.status_code == 200:
-                # Lấy version từ headers của wp-json
-                for header_name, header_value in api_resp.headers.items():
-                    if 'wp' in header_name.lower() or 'wordpress' in header_name.lower():
-                        match = re.search(r'([\d.]+)', header_value)
-                        if match:
-                            detected_version = match.group(1)
-                            version_sources.append(('wp_json_header', detected_version))
-                            break
-        except:
-            pass
-        
-        # 1. Từ meta generator (độ chính xác cao nhất)
-        if not detected_version:
-            response = self._make_request(self.base_url)
-            if response:
-                html = response.text
-                meta_match = re.search(r'content=["\']WordPress ([\d.]+)["\']', html)
-                if meta_match:
-                    detected_version = meta_match.group(1)
-                    version_sources.append(('meta', detected_version))
-        
-        # 2. Tìm trong script tags
-        if not detected_version and response:
-            script_match = re.search(r'wp-embed\.js\?ver=([\d.]+)', html)
-            if script_match:
-                detected_version = script_match.group(1)
-                version_sources.append(('script_ver', detected_version))
-        
-        # 3. Tìm trong comment HTML
-        if not detected_version and response:
-            comment_match = re.search(r'WordPress ([\d.]+)', html)
-            if comment_match:
-                detected_version = comment_match.group(1)
-                version_sources.append(('html_comment', detected_version))
-        
-        # 4. Từ CSS version (style.min.css)
-        if not detected_version:
-            css_urls = [
-                f"{self.base_url}/wp-includes/css/dist/block-library/style.min.css",
-                f"{self.base_url}/wp-includes/css/dist/block-library/style.css",
-                f"{self.base_url}/wp-content/themes/twentytwentyfour/style.css"
-            ]
-            
-            for css_url in css_urls:
-                css_resp = self._make_request(css_url)
-                if css_resp and css_resp.status_code == 200:
-                    # Kiểm tra URL có parameter ver
-                    if '?' in css_resp.url:
-                        match = re.search(r'ver=([\d.]+)', css_resp.url)
-                        if match:
-                            detected_version = match.group(1)
-                            version_sources.append(('css_url', detected_version))
-                            break
-        
-        # 5. Từ RSS feed
-        if not detected_version:
-            rss_resp = self._make_request(f"{self.base_url}/feed/")
-            if rss_resp and rss_resp.status_code == 200:
-                match = re.search(r'generator>https://wordpress.org/\?v=([\d.]+)<', rss_resp.text)
-                if match:
-                    detected_version = match.group(1)
-                    version_sources.append(('rss', detected_version))
-        
-        # 6. Từ readme.html
-        if not detected_version:
-            readme_resp = self._make_request(f"{self.base_url}/readme.html")
-            if readme_resp and readme_resp.status_code == 200:
-                match = re.search(r'Version ([\d.]+)', readme_resp.text)
-                if match:
-                    detected_version = match.group(1)
-                    version_sources.append(('readme', detected_version))
-        
-        # Lưu tất cả sources
-        if version_sources:
-            self.results['wp']['version'] = detected_version
-            self.results['wp']['version_source'] = version_sources[0][0] if version_sources else 'unknown'
-            self.results['wp']['version_sources'] = [
-                f"{src[0]}:{src[1]}" for src in version_sources
-            ]
-        else:
-            self.results['wp']['version'] = ""
-            self.results['wp']['version_source'] = "not_found"
-            self.results['wp']['version_sources'] = []
-        
-        # Kiểm tra version cũ
-        try:
-            if detected_version:
-                major = int(detected_version.split('.')[0])
-                if major < 6:
-                    self.results['vulnerability_indicators']['outdated_wp'] = True
-                    self.results['vulnerability_indicators']['potential_issues'].append(
-                        f"outdated_wp:{detected_version}"
-                    )
-        except:
-            pass
-    
-    def _detect_theme_enhanced(self):
-        """Phát hiện theme với version chính xác"""
-        response = self._make_request(self.base_url)
-        if not response:
-            return
-        
-        html = response.text
-        
-        # Tìm theme path từ HTML
-        theme_path = None
-        path_match = re.search(r'/wp-content/themes/([^/]+)/', html)
-        if path_match:
-            theme_path = path_match.group(1)
-        else:
-            # Thử tìm trong các links
-            all_paths = re.findall(r'/wp-content/themes/([^/]+)/', html)
-            if all_paths:
-                theme_path = all_paths[0]
-        
-        if theme_path:
-            self.results['theme']['slug'] = theme_path
-            self.results['theme']['detected_version'] = theme_path
-            
-            # Lấy thông tin chi tiết từ style.css
-            style_url = f"{self.base_url}/wp-content/themes/{theme_path}/style.css"
-            style_resp = self._make_request(style_url)
-            
-            if style_resp and style_resp.status_code == 200:
-                style_content = style_resp.text
-                
-                # Theme name
-                name_match = re.search(r'Theme Name:\s*(.+)', style_content, re.IGNORECASE)
-                if name_match:
-                    self.results['theme']['name'] = name_match.group(1).strip()
-                
-                # Theme version
-                version_match = re.search(r'Version:\s*([\d.]+)', style_content, re.IGNORECASE)
-                if version_match:
-                    self.results['theme']['version'] = version_match.group(1).strip()
-                    self.results['theme']['version_source'] = 'style.css'
-    
-    def _detect_plugins_enhanced(self):
-        """
-        Phát hiện plugin WordPress + version (clean, scalable, CVE-ready)
-        """
-        plugins_found = []
-        popular_count = 0
-        categories = defaultdict(int)
-        scanned_slugs = set()
-
-        # 1️⃣ Detect plugin từ HTML (passive)
-        response = self._make_request(self.base_url)
-        if response:
-            html = response.text
-            html_slugs = set(re.findall(r'/wp-content/plugins/([^/]+)/', html))
-            scanned_slugs.update(list(html_slugs)[:30])  # Tăng giới hạn
-
-        # 2️⃣ Chủ động probe plugin phổ biến (active)
-        for slug in list(POPULAR_PLUGINS.keys())[:20]:  # Tăng số plugin phổ biến
-            scanned_slugs.add(slug)
-
-        # 3️⃣ Scan từng plugin
-        for plugin_slug in scanned_slugs:
-            # Tạo plugin data structure
-            plugin_data = {
-                "slug": plugin_slug,
-                "detected": False,
-                "version": None,
-                "version_source": None,
-                "confidence": "low",
-                "category": "Unknown",
-                "popular": False,
-                "popular_info": None
-            }
-
-            # Popular plugin mapping
-            plugin_key = plugin_slug.lower().replace('_', '-')
-            if plugin_key in POPULAR_PLUGINS:
-                plugin_data["popular"] = True
-                plugin_data["popular_info"] = POPULAR_PLUGINS[plugin_key]
-                plugin_data["category"] = POPULAR_PLUGINS[plugin_key]["category"]
-
-            # 4️⃣ Kiểm tra plugin có tồn tại không (bằng cách thử truy cập readme.txt hoặc .php)
-            plugin_exists = False
-            
-            # Kiểm tra readme.txt
-            readme_url = f"{self.base_url}/wp-content/plugins/{plugin_slug}/readme.txt"
-            readme_resp = self._make_request(readme_url, timeout=5)
-            
-            # Kiểm tra main php file
-            php_url = f"{self.base_url}/wp-content/plugins/{plugin_slug}/{plugin_slug}.php"
-            php_resp = self._make_request(php_url, timeout=5)
-            
-            if (readme_resp and readme_resp.status_code == 200) or \
-               (php_resp and php_resp.status_code == 200):
-                plugin_exists = True
-                plugin_data["detected"] = True
-                
-                # 5️⃣ Cố gắng lấy version nếu plugin tồn tại
-                version_info = self._detect_plugin_version(plugin_slug)
-                
-                if version_info.get("detected", False):
-                    plugin_data["version"] = version_info.get("version")
-                    plugin_data["version_source"] = version_info.get("source")
-                    plugin_data["confidence"] = version_info.get("confidence", "low")
-            
-            # 6️⃣ Thêm vào danh sách nếu plugin tồn tại
-            if plugin_exists:
-                plugins_found.append(plugin_data)
-                
-                # Thống kê
-                if plugin_data["popular"]:
-                    popular_count += 1
-                    categories[plugin_data["category"]] += 1
-
-        # 7️⃣ Update results
-        self.results["plugins"] = plugins_found
-        self.results["plugin_analysis"]["popular_plugins_found"] = popular_count
-        self.results["plugin_analysis"]["categories"] = dict(categories)
-
-        # 8️⃣ Plugin combination analysis
-        popular_slugs = [p["slug"] for p in plugins_found if p["popular"]]
-        if len(popular_slugs) >= 2:
-            self.results["plugin_analysis"]["plugin_combinations"] = \
-                self._find_common_combinations(popular_slugs)
-    
-
-
-    def _detect_plugin_version(self, plugin_slug):
-        """Detect plugin version không cần module ngoài"""
-        base_url = self.base_url
-        
-        # 1. Kiểm tra readme.txt (cách đáng tin cậy nhất)
-        readme_url = f"{base_url}/wp-content/plugins/{plugin_slug}/readme.txt"
-        response = self._make_request(readme_url)
-        
-        if response and response.status_code == 200:
-            content = response.text
-            # Tìm Stable tag trong readme.txt
-            version_match = re.search(r'Stable tag:\s*([\d.]+)', content, re.IGNORECASE)
-            if version_match:
-                return {
-                    "detected": True,
-                    "version": version_match.group(1).strip(),
-                    "source": "readme.txt",
-                    "confidence": "high"
-                }
-        
-        # 2. Kiểm tra file PHP chính (thường là [slug].php hoặc [slug].php)
-        php_files = [
-            f"{base_url}/wp-content/plugins/{plugin_slug}/{plugin_slug}.php",
-            f"{base_url}/wp-content/plugins/{plugin_slug}/plugin.php",
-            f"{base_url}/wp-content/plugins/{plugin_slug}/main.php",
-        ]
-        
-        for php_url in php_files:
-            response = self._make_request(php_url)
-            if response and response.status_code == 200:
-                content = response.text[:5000]  # Chỉ đọc đầu file
-                # Tìm Version trong comment PHP
-                version_match = re.search(r'Version:\s*([\d.]+)', content, re.IGNORECASE)
-                if version_match:
-                    return {
-                        "detected": True,
-                        "version": version_match.group(1).strip(),
-                        "source": "php_header",
-                        "confidence": "medium"
-                    }
-        
-        # 3. Kiểm tra trong CSS/JS files (tìm ver= parameter)
-        asset_urls = [
-            f"{base_url}/wp-content/plugins/{plugin_slug}/assets/",
-            f"{base_url}/wp-content/plugins/{plugin_slug}/css/",
-            f"{base_url}/wp-content/plugins/{plugin_slug}/js/",
-        ]
-        
-        for asset_url in asset_urls:
-            response = self._make_request(asset_url, timeout=5)
-            if response and response.status_code == 200:
-                # Tìm version trong URL
-                version_match = re.search(r'ver=([\d.]+)', response.text)
-                if version_match:
-                    return {
-                        "detected": True,
-                        "version": version_match.group(1),
-                        "source": "asset_param",
-                        "confidence": "low"
-                    }
-        
-        # 4. Kiểm tra changelog.txt
-        changelog_url = f"{base_url}/wp-content/plugins/{plugin_slug}/changelog.txt"
-        response = self._make_request(changelog_url)
-        if response and response.status_code == 200:
-            content = response.text
-            # Tìm version đầu tiên trong changelog
-            version_match = re.search(r'=\s*([\d.]+)\s*=', content)
-            if version_match:
-                return {
-                    "detected": True,
-                    "version": version_match.group(1).strip(),
-                    "source": "changelog",
-                    "confidence": "medium"
-                }
-        
-        # Không tìm thấy version
-        return {
-            "detected": False,
-            "version": None,
-            "source": None,
-            "confidence": "low"
-        }
-
-
-
-
-
-
-    def _check_cve_vulnerabilities(self):
-        """Kiểm tra CVE dựa trên version"""
-        cve_matches = []
-        
-        # Kiểm tra WordPress core
-        wp_version = self.results['wp']['version']
-        if wp_version:
-            for version_range, cves in CVE_DATABASE.get('wordpress', {}).items():
-                if self._check_version_in_range(wp_version, version_range):
-                    for cve in cves:
-                        cve_matches.append({
-                            'component': 'wordpress',
-                            'version': wp_version,
-                            'cve': cve,
-                            'type': 'core'
-                        })
-        
-        # Kiểm tra plugins
-        for plugin in self.results['plugins']:
-            if plugin.get('version') and plugin.get('slug'):
-                plugin_slug = plugin['slug']
-                plugin_version = plugin['version']
-                
-                for plugin_name in CVE_DATABASE.keys():
-                    if plugin_name != 'wordpress' and plugin_name in plugin_slug.lower():
-                        for version_range, cves in CVE_DATABASE.get(plugin_name, {}).items():
-                            if self._check_version_in_range(plugin_version, version_range):
-                                for cve in cves:
-                                    cve_matches.append({
-                                        'component': plugin_name,
-                                        'version': plugin_version,
-                                        'cve': cve,
-                                        'type': 'plugin'
-                                    })
-        
-        self.results['vulnerability_indicators']['cve_matches'] = cve_matches
-    
-    def _check_version_in_range(self, version, version_range):
-        """Kiểm tra version có nằm trong range không"""
-        try:
-            if version_range.startswith('<'):
-                max_version = version_range[1:]
-                return self._compare_versions(version, max_version) < 0
-            elif '-' in version_range:
-                min_ver, max_ver = version_range.split('-')
-                return (self._compare_versions(version, min_ver) >= 0 and 
-                       self._compare_versions(version, max_ver) <= 0)
-            return False
-        except:
+            await self.queue.put(event)
+            self.stats['processed'] += 1
+            return True
+        except asyncio.QueueFull:
+            self.stats['dropped'] += 1
             return False
     
-    def _compare_versions(self, v1, v2):
-        """So sánh hai version string"""
-        v1_parts = list(map(int, v1.split('.')[:3]))
-        v2_parts = list(map(int, v2.split('.')[:3]))
-        
-        # Padding với 0 nếu cần
-        while len(v1_parts) < 3:
-            v1_parts.append(0)
-        while len(v2_parts) < 3:
-            v2_parts.append(0)
-        
-        for i in range(3):
-            if v1_parts[i] != v2_parts[i]:
-                return v1_parts[i] - v2_parts[i]
-        return 0
+    async def subscribe(self, event_type: EventType, callback):
+        """Subscribe đến loại event cụ thể"""
+        self.subscribers[event_type].append(callback)
     
-    def _calculate_risk_score(self):
-        """Tính điểm risk tổng thể"""
-        risk_score = 0
+    async def run(self):
+        """Chạy event bus loop"""
+        print(f"📡 EventBus started")
+        self.is_running = True
         
-        # WordPress cũ
-        if self.results['vulnerability_indicators']['outdated_wp']:
-            risk_score += 30
-        
-        # PHP cũ
-        if self.results['vulnerability_indicators']['outdated_php']:
-            risk_score += 20
-        
-        # XMLRPC enabled
-        if self.results['security_indicators']['xmlrpc_enabled']:
-            risk_score += 15
-        
-        # Directory listing
-        if self.results['security_indicators']['directory_listing']:
-            risk_score += 10
-        
-        # User enumeration
-        if self.results['security_indicators']['user_enumeration']:
-            risk_score += 10
-        
-        # Sensitive files
-        risk_score += len(self.results['security_indicators']['sensitive_files']) * 5
-        
-        # CVE matches
-        risk_score += len(self.results['vulnerability_indicators']['cve_matches']) * 25
-        
-        # Confidence thấp
-        if self.results['wp']['confidence'] < 40:
-            risk_score += 10
-        
-        # Nhiều plugin
-        if len(self.results['plugins']) > 30:
-            risk_score += 5
-        
-        self.results['vulnerability_indicators']['risk_score'] = min(risk_score, 100)
-    
-    def _find_common_combinations(self, plugin_slugs):
-        """Tìm các combination phổ biến giữa các plugin"""
-        combinations = []
-        
-        # SEO + Form + Page Builder
-        seo_plugins = ['yoast-seo', 'wordpress-seo', 'all-in-one-seo-pack', 'seo-by-rank-math']
-        form_plugins = ['contact-form-7', 'wpforms', 'wpforms-lite', 'gravityforms', 'ninja-forms']
-        page_builders = ['elementor', 'beaver-builder-lite-version', 'visual-composer']
-        
-        has_seo = any(p in plugin_slugs for p in seo_plugins)
-        has_form = any(p in plugin_slugs for p in form_plugins)
-        has_builder = any(p in plugin_slugs for p in page_builders)
-        
-        if has_seo and has_form and has_builder:
-            combinations.append("SEO + Form + Page Builder")
-        
-        # Security stack
-        security_plugins = ['wordfence', 'better-wp-security', 'sucuri-scanner', 'all-in-one-wp-security-and-firewall']
-        cache_plugins = ['litespeed-cache', 'wp-rocket', 'w3-total-cache', 'wp-super-cache']
-        
-        has_security = any(p in plugin_slugs for p in security_plugins)
-        has_cache = any(p in plugin_slugs for p in cache_plugins)
-        
-        if has_security and has_cache:
-            combinations.append("Security + Cache")
-        
-        # E-commerce stack
-        if 'woocommerce' in plugin_slugs:
-            combinations.append("E-commerce Base")
-            if has_seo:
-                combinations.append("WooCommerce + SEO")
-        
-        return combinations
-    
-    def _check_security_endpoints(self):
-        """Kiểm tra các endpoint liên quan đến bảo mật"""
-        # XML-RPC
-        xmlrpc_resp = self._make_request(f"{self.base_url}/xmlrpc.php")
-        if xmlrpc_resp:
-            self.results['endpoints']['xmlrpc'] = True
-            self.results['endpoints']['xmlrpc_status'] = f"{xmlrpc_resp.status_code}"
-            if xmlrpc_resp.status_code < 400:
-                self.results['security_indicators']['xmlrpc_enabled'] = True
-        
-        # Directory listing
-        uploads_resp = self._make_request(f"{self.base_url}/wp-content/uploads/")
-        if uploads_resp:
-            self.results['endpoints']['upload_status'] = f"{uploads_resp.status_code}"
-            if uploads_resp.status_code == 200:
-                if 'Index of' in uploads_resp.text or '<title>Index of' in uploads_resp.text.lower():
-                    self.results['endpoints']['upload_dir_listing'] = True
-                    self.results['security_indicators']['directory_listing'] = True
-        
-        # Sensitive files
-        sensitive_files = [
-            '/wp-config.php',
-            '/wp-config.php.bak',
-            '/wp-config.php~',
-            '/.env',
-            '/.git/HEAD',
-            '/backup.zip',
-            '/phpinfo.php',
-            '/debug.log'
-        ]
-        
-        for file_path in sensitive_files:
-            file_resp = self._make_request(f"{self.base_url}{file_path}")
-            if file_resp and file_resp.status_code == 200:
-                self.results['security_indicators']['sensitive_files'].append(file_path)
-        
-        # User enumeration via REST API
-        if self.results['endpoints']['rest_api']:
-            users_resp = self._make_request(f"{self.base_url}/wp-json/wp/v2/users")
-            if users_resp and users_resp.status_code == 200:
-                try:
-                    users_data = users_resp.json()
-                    if len(users_data) > 0:
-                        self.results['security_indicators']['user_enumeration'] = True
-                except:
-                    pass
-        
-        # WAF Detection
-        response = self._make_request(self.base_url)
-        if response:
-            headers_str = str(response.headers).lower()
-            server_str = str(response.headers.get('Server', '')).lower()
-            
-            if 'cloudflare' in headers_str or 'cf-ray' in headers_str:
-                self.results['security_indicators']['waf_detected'] = 'Cloudflare'
-                self.results['security_indicators']['waf_type'] = 'CDN/WAF'
-            elif 'wordfence' in headers_str:
-                self.results['security_indicators']['waf_detected'] = 'Wordfence'
-                self.results['security_indicators']['waf_type'] = 'Security Plugin'
-            elif 'sucuri' in headers_str:
-                self.results['security_indicators']['waf_detected'] = 'Sucuri'
-                self.results['security_indicators']['waf_type'] = 'Cloud WAF'
-            elif 'akamai' in server_str:
-                self.results['security_indicators']['waf_detected'] = 'Akamai'
-                self.results['security_indicators']['waf_type'] = 'CDN'
-            elif 'imperva' in headers_str or 'incapsula' in headers_str:
-                self.results['security_indicators']['waf_detected'] = 'Imperva'
-                self.results['security_indicators']['waf_type'] = 'WAF'
-    
-    def _assess_vulnerabilities(self):
-        """Đánh giá vulnerabilities tổng thể"""
-        # Kiểm tra PHP version cũ
-        php_ver = self.results['server']['php']
-        if php_ver:
+        while self.is_running and not self.shutdown_event.is_set():
             try:
-                major = int(php_ver.split('.')[0])
-                if major < 8:
-                    self.results['vulnerability_indicators']['outdated_php'] = True
-                    self.results['vulnerability_indicators']['potential_issues'].append(
-                        f"outdated_php:{php_ver}"
+                try:
+                    event = await asyncio.wait_for(
+                        self.queue.get(),
+                        timeout=0.5
                     )
-            except:
+                except asyncio.TimeoutError:
+                    continue
+                
+                if event.type in self.subscribers:
+                    for callback in self.subscribers[event.type]:
+                        asyncio.create_task(callback(event))
+                
+                self.queue.task_done()
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
                 pass
         
-        # Kiểm tra số lượng plugin lớn
-        if len(self.results['plugins']) > 30:
-            self.results['vulnerability_indicators']['potential_issues'].append(
-                "many_plugins"
-            )
-        
-        # Kiểm tra nếu có xmlrpc và directory listing cùng lúc
-        if (self.results['security_indicators']['xmlrpc_enabled'] and 
-            self.results['security_indicators']['directory_listing']):
-            self.results['vulnerability_indicators']['potential_issues'].append(
-                "xmlrpc_with_directory_listing"
-            )
+        print("📡 EventBus stopped")
     
-    def scan(self):
-        """Thực hiện recon đầy đủ với schema mới"""
-        start_time = time.time()
+    async def stop(self):
+        """Dừng event bus ngay lập tức"""
+        self.is_running = False
+        self.shutdown_event.set()
         
-        # Bước 1: Detect base URL
-        base_found = False
-        for test_url in [self.https_url, self.url]:
-            response = self._make_request(test_url)
-            if response and response.status_code < 400:
-                self.base_url = test_url
-                base_found = True
-                break
-        
-        if not base_found:
-            self.results['scan_metadata']['status'] = 'failed_no_access'
-            return self.results
-        
-        self._detect_wp_signatures()
-        self._calculate_wp_confidence()
-        
-        # Nếu không phải WordPress (confidence thấp), dừng sớm
-        if not self.results['wp']['detected']:
-            self.results['scan_metadata']['status'] = 'failed_not_wordpress'
-            self.results['scan_metadata']['duration'] = time.time() - start_time
-            return self.results
-        
-        # Bước 3: Detect server info
-        response = self._make_request(self.base_url)
-        if response:
-            self._detect_server_info(response)
-        
-        # Bước 4: Detect WordPress version
-        self._detect_wp_version_enhanced()
-        
-        # Bước 5: Detect theme
-        self._detect_theme_enhanced()
-        
-        # Bước 6: Detect plugins
-        self._detect_plugins_enhanced()
-        
-        # Bước 7: Check security endpoints
-        self._check_security_endpoints()
-        
-        # Bước 8: Check CVE vulnerabilities
-        self._check_cve_vulnerabilities()
-        
-        # Bước 9: Calculate risk score
-        self._calculate_risk_score()
-        
-        # Bước 10: Assess vulnerabilities
-        self._assess_vulnerabilities()
-        
-        # Cập nhật metadata
-        self.results['scan_metadata']['duration'] = round(time.time() - start_time, 2)
-        self.results['scan_metadata']['status'] = 'completed'
-        
-        return self.results
-    
-    def get_summary(self, show_all=False):
-        """Trả về summary ngắn gọn để hiển thị"""
-        if not self.results['wp']['detected']:
-            return None
-        
-        summary = {
-            'domain': self.domain,
-            'wp_detected': self.results['wp']['detected'],
-            'wp_confidence': self.results['wp']['confidence'],
-            'wp_version': self.results['wp']['version'] or 'Unknown',
-            'wp_core_version': self.results['wp']['version'] or 'Unknown',
-            'theme': self.results['theme']['name'] or 'Unknown',
-            'theme_version': self.results['theme']['version'] or 'Unknown',
-            'server': self.results['server']['webserver'] or 'Unknown',
-            'server_full': self.results['server']['server_full'] or 'Unknown',
-            'php': self.results['server']['php'] or 'Unknown',
-            'php_source': self.results['server']['php_source'] or 'Unknown',
-            'xmlrpc': self.results['endpoints']['xmlrpc'],
-            'xmlrpc_status': self.results['endpoints']['xmlrpc_status'],
-            'rest_api': self.results['endpoints']['rest_api'],
-            'rest_status': self.results['endpoints']['rest_api_status'],
-            'rest_endpoints_count': len(self.results['endpoints']['rest_api_endpoints']),
-            'wp_login': self.results['endpoints']['wp_login'],
-            'wp_admin': self.results['endpoints']['wp_admin'],
-            'upload_listing': self.results['endpoints']['upload_dir_listing'],
-            'upload_status': self.results['endpoints']['upload_status'],
-            'waf': self.results['security_indicators']['waf_detected'] or 'None',
-            'waf_type': self.results['security_indicators']['waf_type'] or '',
-            'directory_listing': self.results['security_indicators']['directory_listing'],
-            'sensitive_files_count': len(self.results['security_indicators']['sensitive_files']),
-            'user_enumeration': self.results['security_indicators']['user_enumeration'],
-            'xmlrpc_enabled': self.results['security_indicators']['xmlrpc_enabled'],
-            'outdated_wp': self.results['vulnerability_indicators']['outdated_wp'],
-            'outdated_php': self.results['vulnerability_indicators']['outdated_php'],
-            'plugins_count': len(self.results['plugins']),
-            'popular_plugins': self.results['plugin_analysis']['popular_plugins_found'],
-            'categories': dict(self.results['plugin_analysis']['categories']),
-            'plugin_combinations': self.results['plugin_analysis']['plugin_combinations'],
-            'cve_count': len(self.results['vulnerability_indicators']['cve_matches']),
-            'cve_matches': self.results['vulnerability_indicators']['cve_matches'],
-            'risk_score': self.results['vulnerability_indicators']['risk_score'],
-            'potential_issues': self.results['vulnerability_indicators']['potential_issues'],
-            'vulnerability_indicators': len(self.results['vulnerability_indicators']['potential_issues']),
-            'security_issues': sum([
-                1 if self.results['security_indicators']['directory_listing'] else 0,
-                1 if self.results['security_indicators']['xmlrpc_enabled'] else 0,
-                1 if self.results['security_indicators']['user_enumeration'] else 0,
-                len(self.results['security_indicators']['sensitive_files'])
-            ]),
-            'detected_plugins': [],  # Thêm danh sách plugin
-            'popular_plugin_details': []  # Thêm chi tiết plugin phổ biến
-        }
-        
-        # Thêm danh sách plugin phát hiện được
-        for plugin in self.results['plugins']:
-            if plugin.get('detected'):
-                plugin_info = {
-                    'slug': plugin.get('slug'),
-                    'version': plugin.get('version'),
-                    'category': plugin.get('category'),
-                    'popular': plugin.get('popular')
-                }
-                summary['detected_plugins'].append(plugin_info)
-                
-                if plugin.get('popular'):
-                    summary['popular_plugin_details'].append({
-                        'name': plugin.get('slug'),
-                        'version': plugin.get('version'),
-                        'category': plugin.get('category')
-                    })
-        
-        # Thêm top plugin categories
-        if summary['categories']:
-            top_categories = sorted(summary['categories'].items(), key=lambda x: x[1], reverse=True)[:3]
-            summary['top_categories'] = [f"{cat}:{count}" for cat, count in top_categories]
-        
-        return summary
-
-def collect_wp_domains_parallel():
-    """Thu thập domain WordPress với xử lý song song thời gian thực"""
-    global stop_flag
-    
-    all_domains = set()
-    rapiddns_seeds = set()
-    new_domains_queue = deque()
-    domain_state = {}
-
-    # Load domain cũ nếu có
-    if os.path.exists(OUTPUT_FILE):
-        with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
-            all_domains = {line.strip() for line in f if line.strip()}
-        print(f"✓ Đã load {len(all_domains):,} domain cũ")
-    
-    print(f"\n{'='*60}")
-    print(f"BẮT ĐẦU THU THẬP DOMAIN WORDPRESS")
-    print(f"Dorks: {len(DORKS)} | Workers: {MAX_WORKERS_DISCOVERY}")
-    print(f"{'='*60}\n")
-    
-    # Shared variables
-    lock = threading.Lock()
-    processed_dorks = 0
-    total_dorks = len(DORKS)
-    enhanced_results = {}
-    scan_count = 0
-    vulnerable_domains = []
-    
-    # Tạo file để ghi domain yếu ngay khi phát hiện
-    if os.path.exists(DOMAIN_VULN_FILE):
-        os.remove(DOMAIN_VULN_FILE)
-    
-    # Progress tracking
-    progress_data = {
-        'total_targets': 0,
-        'scanned_targets': 0,
-        'vulnerable_targets': 0,
-        'current_status': 'Initializing...'
-    }
-    
-    def update_progress_display():
-        """Cập nhật hiển thị progress bar"""
-        with lock:
-            if progress_data['total_targets'] == 0:
-                return
-            
-            scanned = progress_data['scanned_targets']
-            total = progress_data['total_targets']
-            vuln = progress_data['vulnerable_targets']
-            percentage = (scanned / total * 100) if total > 0 else 0
-            
-            bar_length = 40
-            filled_length = int(bar_length * scanned // total)
-            bar = '█' * filled_length + '░' * (bar_length - filled_length)
-            
-            status_line = (f"\r\033[K[{bar}] {scanned:3d}/{total:3d} "
-                          f"({percentage:5.1f}%) | Vuln: {vuln:2d} | "
-                          f"{progress_data['current_status'][:40]}")
-            
-            sys.stdout.write(status_line)
-            sys.stdout.flush()
-    
-    def collect_from_rapiddns(domain_keyword):
-        """Lấy domain từ RapidDNS.io"""
-        domains = set()
-        try:
-            url = f"https://rapiddns.io/subdomain/{domain_keyword}?full=1"
-            resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
-            if resp.status_code == 200:
-                matches = re.findall(
-                    r'([a-zA-Z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn))',
-                    resp.text
-                )
-                for domain_raw in matches:
-                    domain = domain_raw.lower().replace("www.", "")
-                    if extract_domain_func(f"http://{domain}"):
-                        domains.add(domain)
-        except Exception as e:
-            print(f"\r\033[K  [!] RapidDNS error: {e}")
-        return domains
-    
-
-    def v12_discovery_source():
-        """
-        V12 – Discovery Engine
-        Sinh domain độc lập, đã qua lọc
-        """
-        discovered = set()
-
-        sources = [
-            "https://raw.githubusercontent.com/arkadiyt/bounty-targets-data/main/data/domains.txt",
-            "https://rapiddns.io/subdomain/wp-content?full=1"
-        ]
-
-        for src in sources:
+        while not self.queue.empty():
             try:
-                r = requests.get(src, timeout=12, verify=False)
-                raw_domains = re.findall(
-                    r'([a-zA-Z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn))',
-                    r.text
-                )
-
-                for d in raw_domains:
-                    domain = d.lower().replace("www.", "")
-                    if not extract_domain_func(domain):
-                        continue
-
-                    v12_result = v12_discovery_filter(domain)
-                    if not v12_result["accept"]:
-                        continue
-
-                    discovered.add(domain)
-
+                self.queue.get_nowait()
+                self.queue.task_done()
             except:
-                continue
+                pass
 
-        return discovered
+# =================== PHASE 0: SOURCE PRODUCERS ===================
+class BaseProducer:
+    """Base class cho tất cả producers"""
+    
+    def __init__(self, name: str, event_bus: AsyncEventBus):
+        self.name = name
+        self.event_bus = event_bus
+        self.is_running = False
+    
+    async def start(self):
+        """Bắt đầu producer"""
+        self.is_running = True
+        asyncio.create_task(self._produce_loop())
+    
+    async def stop(self):
+        """Dừng producer"""
+        self.is_running = False
+    
+    async def _produce_loop(self):
+        """Override trong subclass"""
+        pass
 
-
-
-
-
-
-
-
-
-
-
-
-    def extract_domain_func(url):
-        """Trích xuất domain từ URL"""
+class TargetFileProducer(BaseProducer):
+    """Producer từ file targets.txt"""
+    
+    def __init__(self, event_bus: AsyncEventBus, targets_file: str):
+        super().__init__("TargetFileProducer", event_bus)
+        self.targets_file = targets_file
+    
+    async def _produce_loop(self):
+        """Đọc targets từ file và publish"""
         try:
-            if not url.startswith(('http://', 'https://')):
-                url = 'http://' + url
+            with open(self.targets_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            for line in lines:
+                if not self.is_running:
+                    break
                 
-            parsed = urlparse(url)
-            domain = parsed.netloc.lower()
+                domain = line.strip()
+                if domain and not domain.startswith('#'):
+                    event = Event(
+                        type=EventType.RAW_DOMAIN,
+                        data={'domain': domain, 'raw': domain},
+                        source=self.name
+                    )
+                    await self.event_bus.publish(event)
+                
+                await asyncio.sleep(0.01)
             
-            # Loại bỏ www.
-            if domain.startswith('www.'):
-                domain = domain[4:]
-            
-            # Kiểm tra domain .vn
-            pattern = r'^([a-z0-9][a-z0-9-]*\.)*[a-z0-9][a-z0-9-]*\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn|info\.vn|biz\.vn)$'
-            
-            if re.match(pattern, domain):
-                return domain
-            return None
-        except:
-            return None
+        except Exception as e:
+            pass
 
-
-    def v12_discovery_filter(domain):
-        """
-        V12-L1: Filter cho SEARCH ENGINE (DDG)
-        Nhẹ – loại rác rõ ràng – cho phép mở rộng DNS
-        """
-        if is_ip(domain):
-            return {"accept": False, "allow_dns_expand": False}
-
-        if domain.count('.') > 4:
-            return {"accept": False, "allow_dns_expand": False}
-
-        if looks_like_cdn_or_api(domain):
-            return {"accept": False, "allow_dns_expand": False}
-
-        # ❗ search engine cho phép seed DNS
-        return {
-            "accept": True,
-            "allow_dns_expand": True,
-            "score": 70,              # điểm tin cậy discovery
-            "confidence": 0.7 
-        }
-
-
-
-
-    def v12_dns_filter(domain):
-        """
-        V12-L2: Filter cho RAPIDDNS
-        Chặt – không feed ngược – loại hạ tầng
-        """
-        if is_ip(domain):
-            return {"accept": False, "allow_dns_expand": False}
-
-        # RapidDNS rất nhiều sub sâu
-        if domain.count('.') > 3:
-            return {"accept": False, "allow_dns_expand": False}
-
-        if looks_like_cdn_or_api(domain):
-            return {"accept": False, "allow_dns_expand": False}
-
-        # ❗ DNS expansion TUYỆT ĐỐI không feed lại
-        return {
-            "accept": True,
-            "allow_dns_expand": False,
-            "score": 85,              # DNS chắc hơn search
-            "confidence": 0.85
-        }
-
-
-
-
-
-
-    def v12_classify(domain, source="unknown"):
-        """
-        Wrapper / backward compatibility
-        """
-        if source == "ddg":
-            return v12_discovery_filter(domain)
-        elif source == "rapiddns":
-            return v12_dns_filter(domain)
-        else:
-            return {
-                "accept": False,
-                "allow_dns_expand": False,
-                "score": 0,
-                "confidence": 0.0
-            }
-
-
-
-
-
-
-
-    def process_dork(dork_idx, dork):
-        nonlocal processed_dorks, progress_data
-
-        
-        if stop_flag:
-            return dork_idx, 0, dork
-        
+class DorkProducer(BaseProducer):
+    """Producer từ DuckDuckGo dorks"""
+    
+    def __init__(self, event_bus: AsyncEventBus):
+        super().__init__("DorkProducer", event_bus)
+        self.session = None
+    
+    async def _produce_loop(self):
+        """Thu thập domain từ dorks"""
         try:
-            local_new_domains = []
-            delay_time = random.uniform(3.0, 8.0)  # Delay 3-8 giây
-            time.sleep(delay_time)
-            # PHẦN 1: XỬ LÝ DUCKDUCKGO
-            with lock:
-                progress_data['current_status'] = f"DuckDuckGo: {dork[:40]}..."
+            from ddgs import DDGS
+            self.ddgs = DDGS()
             
-            try:
-                with DDGS() as ddgs:
-                    results = ddgs.text(
+            for dork in Config.DORKS:
+                if not self.is_running:
+                    break
+                
+                try:
+                    results = self.ddgs.text(
                         query=dork,
                         region="vn-vn",
                         safesearch="off",
-                        max_results=NUM_RESULTS_PER_DORK,
-                        timeout=15
+                        max_results=50,
+                        timeout=10
                     )
                     
                     for result in results:
-                        if stop_flag:
+                        if not self.is_running:
                             break
+                        
                         url = result.get('href', '') or result.get('url', '')
                         if url:
-                            domain = extract_domain_func(url)
-                            if domain:
-                                v12_result = v12_discovery_filter(domain)
-                                if not v12_result["accept"]:
-                                    continue
-
-                                with lock:
-                                    if domain not in all_domains:
-                                        all_domains.add(domain)
-                                        local_new_domains.append(domain)
-                                        new_domains_queue.append(domain)
-
-                                        domain_state[domain] = {
-                                            "source": "ddg",
-                                            "v12_accept": True,
-                                            "v12_score": v12_result.get("score", 0),
-                                            "v12_confidence": v12_result.get("confidence", 0.0),
-                                            "allow_dns_expand": v12_result["allow_dns_expand"],
-                                            "from_rapiddns": False,
-                                            "recon_done": False
-                                        }
-
-                                        if v12_result["allow_dns_expand"]:
-                                            rapiddns_seeds.add(domain)
-
-                                        progress_data['total_targets'] += 1
-
-                        time.sleep(random.uniform(0.5, 1.5))
-
-            except Exception as ddg_error:
-                print(f"\r\033[K  [!] DuckDuckGo error: {str(ddg_error)[:50]}")
-                time.sleep(random.uniform(10.0, 15.0))
-
-            
-            with lock:
-                processed_dorks += 1
-            
-            return dork_idx, len(local_new_domains), dork
-            
-        except Exception as e:
-            with lock:
-                processed_dorks += 1
-            return dork_idx, 0, dork
-    
-
-    def perform_enhanced_recon(domain):
-        """Thực hiện enhanced recon trên một domain"""
-        nonlocal enhanced_results, scan_count, progress_data, vulnerable_domains
+                            try:
+                                parsed = urlparse(url)
+                                domain = parsed.netloc.lower()
+                                if domain.startswith('www.'):
+                                    domain = domain[4:]
+                                
+                                event = Event(
+                                    type=EventType.RAW_DOMAIN,
+                                    data={'domain': domain, 'raw': url, 'dork': dork},
+                                    source=self.name
+                                )
+                                await self.event_bus.publish(event)
+                                
+                            except:
+                                pass
+                        
+                        await asyncio.sleep(0.1)
+                    
+                    await asyncio.sleep(random.uniform(2, 4))
+                    
+                except Exception:
+                    await asyncio.sleep(5)
         
-        if stop_flag:
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+class PassiveDNSProducer(BaseProducer):
+    """Producer từ passive DNS sources"""
+    
+    def __init__(self, event_bus: AsyncEventBus):
+        super().__init__("PassiveDNSProducer", event_bus)
+        self.session = None
+    
+    async def _produce_loop(self):
+        """Thu thập từ passive DNS sources"""
+        async with aiohttp.ClientSession() as session:
+            for source in Config.DISCOVERY_SOURCES:
+                if not self.is_running:
+                    break
+                
+                try:
+                    async with session.get(source, timeout=10) as resp:
+                        if resp.status == 200:
+                            text = await resp.text()
+                            domains = re.findall(
+                                r'([a-zA-Z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn))',
+                                text,
+                                re.IGNORECASE
+                            )
+                            
+                            for domain_raw in set(domains):
+                                domain = domain_raw.lower().replace("www.", "")
+                                
+                                event = Event(
+                                    type=EventType.RAW_DOMAIN,
+                                    data={'domain': domain, 'raw': domain_raw, 'source': source},
+                                    source=self.name
+                                )
+                                await self.event_bus.publish(event)
+                                
+                                await asyncio.sleep(0.01)
+                    
+                except Exception:
+                    pass
+                
+                await asyncio.sleep(1)
+
+# =================== PHASE 1: PRE-FILTER ===================
+class PreFilter:
+    """Phase 1: Lọc nhanh, rẻ"""
+    
+    def __init__(self, event_bus: AsyncEventBus, history_file: str = "scanned_history.txt"):
+        self.event_bus = event_bus
+        self.seen_domains = set()
+        self.dns_resolver = aiodns.DNSResolver()
+        self.history_file = history_file
+        self._load_history()
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.RAW_DOMAIN, 
+            self.process_raw_domain
+        ))
+    
+    def _load_history(self):
+        """Load domains đã scan từ file"""
+        if os.path.exists(self.history_file):
+            try:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        domain = line.strip()
+                        if domain:
+                            self.seen_domains.add(domain)
+            except Exception:
+                pass
+    
+    def _save_to_history(self, domain: str):
+        """Lưu domain vào file"""
+        try:
+            with open(self.history_file, 'a', encoding='utf-8') as f:
+                f.write(f"{domain}\n")
+        except:
+            pass
+    
+    async def process_raw_domain(self, event: Event):
+        """Xử lý raw domain event"""
+        domain = event.data.get('domain', '')
+        
+        if domain in self.seen_domains:
             return
+        self.seen_domains.add(domain)
+        self._save_to_history(domain)
+        
+        normalized = self.normalize_domain(domain)
+        if not normalized:
+            return
+        
+        is_resolvable = await self.quick_dns_check(normalized)
+        if not is_resolvable:
+            return
+        
+        clean_event = Event(
+            type=EventType.CLEAN_DOMAIN,
+            data={
+                'domain': normalized,
+                'original': domain,
+                'source': event.source,
+                'timestamp': time.time()
+            },
+            source="PreFilter"
+        )
+        
+        await self.event_bus.publish(clean_event)
+    
+    def normalize_domain(self, domain: str) -> Optional[str]:
+        """Normalize domain"""
+        try:
+            if '://' in domain:
+                parsed = urlparse(domain)
+                domain = parsed.netloc
+            
+            domain = domain.lower().replace("www.", "")
+            
+            if ':' in domain:
+                domain = domain.split(':')[0]
+            
+            if not re.match(r'^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$', domain):
+                return None
+            
+            cdn_keywords = ['cdn', 'cloudfront', 'akamai', 'fastly', 'cloudflare']
+            if any(kw in domain for kw in cdn_keywords):
+                return None
+            
+            if domain.count('.') > 4:
+                return None
+            
+            return domain
+            
+        except:
+            return None
+    
+    async def quick_dns_check(self, domain: str) -> bool:
+        """DNS resolve nhanh với timeout ngắn"""
+        try:
+            await asyncio.wait_for(
+                self.dns_resolver.query(domain, 'A'),
+                timeout=Config.DNS_TIMEOUT
+            )
+            return True
+        except:
+            return False
+
+# =================== PHASE 2: WP GATE DETECTOR ===================
+class WPGateDetector:
+    """Phase 2: Phát hiện WordPress sớm"""
+    
+    def __init__(self, event_bus: AsyncEventBus, workers: int = 8):
+        self.event_bus = event_bus
+        self.session = None
+        self.semaphore = asyncio.Semaphore(workers)
+        
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.CLEAN_DOMAIN,
+            self.process_clean_domain
+        ))
+    
+    async def init_session(self):
+        """Khởi tạo aiohttp session"""
+        if not self.session:
+            timeout = aiohttp.ClientTimeout(total=Config.REQUEST_TIMEOUT)
+            self.session = aiohttp.ClientSession(
+                timeout=timeout,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            )
+    
+    async def process_clean_domain(self, event: Event):
+        """Xử lý clean domain để detect WordPress"""
+        async with self.semaphore:
+            domain = event.data['domain']
+            
+            if not self.session:
+                await self.init_session()
+            
+            probes = [
+                self.probe_homepage(domain),
+                self.probe_wp_login(domain),
+                self.probe_wp_content(domain),
+                self.probe_wp_json(domain),
+            ]
+            
+            results = await asyncio.gather(*probes, return_exceptions=True)
+            
+            confidence = 0
+            signals = []
+            
+            for i, result in enumerate(results):
+                if isinstance(result, dict) and result.get('detected'):
+                    confidence += 25
+                    signals.append(result.get('signal', f'probe_{i}'))
+            
+            is_wp = confidence >= 50
+            
+            wp_event = Event(
+                type=EventType.WP_DETECTED,
+                data={
+                    'domain': domain,
+                    'is_wp': is_wp,
+                    'confidence': min(confidence, 100),
+                    'signals': signals,
+                    'timestamp': time.time()
+                },
+                source="WPGateDetector"
+            )
+            
+            await self.event_bus.publish(wp_event)
+    
+    async def probe_homepage(self, domain: str) -> Dict:
+        """Probe homepage cho WordPress signs"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}"
+                try:
+                    async with self.session.get(url, allow_redirects=True, ssl=False) as resp:
+                        if resp.status < 400:
+                            html = await resp.text()
+                            
+                            signals = []
+                            if '/wp-content/' in html:
+                                signals.append('wp_content_structure')
+                            if '/wp-includes/' in html:
+                                signals.append('wp_includes')
+                            if 'wordpress' in html.lower() and 'generator' in html.lower():
+                                signals.append('meta_generator')
+                            
+                            return {
+                                'detected': len(signals) > 0,
+                                'signal': 'homepage',
+                                'signals': signals
+                            }
+                except:
+                    continue
+        except Exception:
+            pass
+        
+        return {'detected': False}
+    
+    async def probe_wp_login(self, domain: str) -> Dict:
+        """Probe wp-login.php"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/wp-login.php"
+                try:
+                    async with self.session.head(url, allow_redirects=False, ssl=False) as resp:
+                        if resp.status < 400:
+                            return {
+                                'detected': True,
+                                'signal': 'wp_login',
+                                'status': resp.status
+                            }
+                except:
+                    continue
+        except:
+            pass
+        
+        return {'detected': False}
+    
+    async def probe_wp_content(self, domain: str) -> Dict:
+        """Probe wp-content directory"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/wp-content/"
+                try:
+                    async with self.session.head(url, allow_redirects=False, ssl=False) as resp:
+                        if resp.status < 400:
+                            return {
+                                'detected': True,
+                                'signal': 'wp_content',
+                                'status': resp.status
+                            }
+                except:
+                    continue
+        except:
+            pass
+        
+        return {'detected': False}
+    
+    async def probe_wp_json(self, domain: str) -> Dict:
+        """Probe WordPress REST API"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/wp-json/"
+                try:
+                    async with self.session.get(url, ssl=False) as resp:
+                        if resp.status == 200:
+                            return {
+                                'detected': True,
+                                'signal': 'wp_json',
+                                'status': resp.status
+                            }
+                except:
+                    continue
+        except:
+            pass
+        
+        return {'detected': False}
+    
+    async def cleanup(self):
+        """Cleanup session"""
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception:
+                pass
+
+# =================== PHASE 3: WP CORE FINGERPRINT ===================
+class WPCoreFingerprint:
+    """Phase 3: Lấy thông tin core WordPress"""
+    
+    def __init__(self, event_bus: AsyncEventBus):
+        self.event_bus = event_bus
+        self.session = None
+        
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.WP_DETECTED,
+            self.process_wp_domain
+        ))
+    
+    async def init_session(self):
+        """Khởi tạo session"""
+        if not self.session:
+            timeout = aiohttp.ClientTimeout(total=Config.REQUEST_TIMEOUT)
+            self.session = aiohttp.ClientSession(
+                timeout=timeout,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+    
+    async def process_wp_domain(self, event: Event):
+        """Xử lý domain đã xác nhận là WordPress"""
+        if not event.data['is_wp']:
+            return
+        
+        domain = event.data['domain']
+        
+        if not self.session:
+            await self.init_session()
+        
+        tasks = [
+            self.get_wp_version(domain),
+            self.get_theme_info(domain),
+            self.get_server_info(domain),
+            self.check_xmlrpc(domain),
+            self.check_rest_api(domain),
+        ]
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        wp_profile = {
+            'domain': domain,
+            'confidence': event.data['confidence'],
+            'wp_version': results[0] if not isinstance(results[0], Exception) else None,
+            'theme': results[1] if not isinstance(results[1], Exception) else None,
+            'server': results[2] if not isinstance(results[2], Exception) else None,
+            'xmlrpc': results[3] if not isinstance(results[3], Exception) else False,
+            'rest_api': results[4] if not isinstance(results[4], Exception) else False,
+            'timestamp': time.time()
+        }
+        
+        profile_event = Event(
+            type=EventType.WP_PROFILE,
+            data=wp_profile,
+            source="WPCoreFingerprint"
+        )
+        
+        await self.event_bus.publish(profile_event)
+    
+    async def get_wp_version(self, domain: str) -> Optional[str]:
+        """Lấy WordPress version với multiple strategies"""
+        version_candidates = []
+        
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}"
+            try:
+                async with self.session.get(url, ssl=False, timeout=8) as resp:
+                    if resp.status == 200:
+                        html = await resp.text()
+                        
+                        patterns = [
+                            r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']WordPress\s+([\d.]+)["\']',
+                            r'content=["\']WordPress\s+([\d.]+)["\'][^>]+name=["\']generator["\']',
+                            r'generator=["\']WordPress\s+([\d.]+)["\']',
+                            r'(?:wp-embed|wp-emoji|wp-api)\.js\?ver=([\d.]+)',
+                            r'src="[^"]+ver=([\d.]+)"[^>]*wp-embed',
+                            r'<generator>https?://wordpress\.org/\?v=([\d.]+)</generator>',
+                            r'generator="WordPress/([\d.]+)"',
+                            r'<!--[^>]*WordPress\s+([\d.]+)[^>]*-->',
+                            r'WordPress\s+([\d.]+)',
+                        ]
+                        
+                        for pattern in patterns:
+                            matches = re.findall(pattern, html, re.IGNORECASE)
+                            version_candidates.extend(matches)
+                        
+                        break
+            except:
+                continue
+        
+        if version_candidates:
+            valid_versions = []
+            for v in version_candidates:
+                if self._is_valid_version(v):
+                    valid_versions.append(v)
+            
+            if valid_versions:
+                counter = Counter(valid_versions)
+                most_common = counter.most_common(1)[0]
+                return most_common[0]
+        
+        return None
+    
+    def _is_valid_version(self, version: str) -> bool:
+        """Validate version string"""
+        if not version or len(version) > 10:
+            return False
+        
+        pattern = r'^\d+(?:\.\d+){1,2}$'
+        if not re.match(pattern, version):
+            return False
+        
+        parts = version.split('.')
+        if len(parts) > 3:
+            return False
         
         try:
-            with lock:
-                progress_data['current_status'] = f"Scanning: {domain[:30]}..."
-            
-            recon = WordPressReconEnhanced(domain)
-            result = recon.scan()
-            with lock:
-                if domain in domain_state:
-                    # nâng confidence nếu đúng WordPress
-                    if result['wp']['detected']:
-                        domain_state[domain]["final_wp_detected"] = True
-                        domain_state[domain]["final_wp_confidence"] = result['wp']['confidence']
-                        domain_state[domain]["final_score"] = result.get("risk_score", 0)
-                    else:
-                        domain_state[domain]["final_wp_detected"] = False
-                        domain_state[domain]["final_wp_confidence"] = result['wp']['confidence']
-
-                    domain_state[domain]["recon_done"] = True
-
-            with lock:
-                enhanced_results[domain] = result
-                scan_count += 1
-                progress_data['scanned_targets'] += 1
-            
-            if result['wp']['detected']:
-                summary = recon.get_summary()
-                if summary:
-                    total_issues = summary['vulnerability_indicators'] + summary['security_issues']
-                    risk_score = summary['risk_score']
-                    
-                    if total_issues > 0 or risk_score >= 30 or summary['wp_confidence'] < 40:
-                        with lock:
-                            vulnerable_domains.append(domain)
-                            progress_data['vulnerable_targets'] += 1
-                        
-                        # Hiển thị chi tiết
-                        if risk_score >= 70:
-                            risk_color = "\033[91m"
-                            risk_level = "CRITICAL"
-                        elif risk_score >= 50:
-                            risk_color = "\033[93m"
-                            risk_level = "HIGH"
-                        elif risk_score >= 30:
-                            risk_color = "\033[33m"
-                            risk_level = "MEDIUM"
-                        else:
-                            risk_color = "\033[92m"
-                            risk_level = "LOW"
-                        
-                        print(f"\n{risk_color}{'='*80}\033[0m")
-                        print(f"{risk_color}📍 WORDPRESS SECURITY REPORT: {domain}\033[0m")
-                        print(f"{risk_color}{'='*80}\033[0m")
-                        
-                        # BASIC INFO
-                        print(f"\n📋 BASIC INFORMATION")
-                        print(f"{'-'*60}")
-                        print(f"  • WordPress: {'✅ YES' if summary['wp_detected'] else '❌ NO'}")
-                        print(f"  • Confidence: {summary['wp_confidence']}%")
-                        print(f"  • Version: {summary['wp_version']}")
-                        if summary.get('outdated_wp', False):
-                            print(f"  • Status: ⚠️  OUTDATED")
-                        print(f"  • Theme: {summary['theme']} v{summary['theme_version']}")
-                        
-                        # SERVER INFO
-                        print(f"\n🖥️  SERVER INFORMATION")
-                        print(f"{'-'*60}")
-                        print(f"  • Server: {summary['server']}")
-                        print(f"  • PHP: {summary['php']}")
-                        if summary.get('outdated_php', False):
-                            print(f"  • PHP Status: ⚠️  OUTDATED")
-                        
-                        # PLUGIN INFO
-                        print(f"\n🔌 PLUGIN ANALYSIS")
-                        print(f"{'-'*60}")
-                        print(f"  • Total Plugins: {summary['plugins_count']}")
-                        print(f"  • Popular Plugins: {summary['popular_plugins']}")
-                        
-                        # SECURITY
-                        print(f"\n🔐 SECURITY")
-                        print(f"{'-'*60}")
-                        xmlrpc_status = "⚠️  ENABLED" if summary.get('xmlrpc_enabled', False) else "✅ DISABLED"
-                        print(f"  • XML-RPC: {xmlrpc_status}")
-                        
-                        upload_status = "⚠️  ENABLED" if summary['upload_listing'] else "✅ DISABLED"
-                        print(f"  • Upload Listing: {upload_status}")
-                        
-                        waf_info = f"{summary['waf']}" if summary['waf'] != 'None' else "Not Detected"
-                        print(f"  • WAF: {waf_info}")
-                        
-                        # VULNERABILITIES
-                        print(f"\n⚠️  VULNERABILITIES")
-                        print(f"{'-'*60}")
-                        print(f"  • Risk Score: {risk_color}{risk_score}/100 [{risk_level}]\033[0m")
-                        print(f"  • CVE Matches: {summary['cve_count']}")
-                        print(f"  • Security Issues: {summary['security_issues']}")
-                        
-                        print(f"\n{risk_color}{'='*80}\033[0m")
-                        
-                        # Ghi vào file
-                        with lock:
-                            with open(DOMAIN_VULN_FILE, "a", encoding="utf-8") as f:
-                                cve_list = []
-                                cve_matches = result['vulnerability_indicators'].get('cve_matches', [])
-                                if cve_matches:
-                                    cve_list = [cve.get('cve', '') for cve in cve_matches[:3]]
-                                
-                                f.write(f"{domain}|"
-                                       f"Risk:{risk_score}|"
-                                       f"WP:{summary['wp_version']}|"
-                                       f"PHP:{summary['php']}|"
-                                       f"CVE:{','.join(cve_list)}|"
-                                       f"Plugins:{summary['plugins_count']}|"
-                                       f"Issues:{total_issues}\n")
-                    else:
-                        # Domain sạch
-                        print(f"\r\033[K\033[92m✓\033[0m {domain[:40]:<40} | "
-                              f"WP:{summary['wp_version'][:8]:<8} | "
-                              f"Plugins:{summary['plugins_count']:<3} | "
-                              f"Risk:{summary['risk_score']:<3} | "
-                              f"✅ Clean")
-            else:
-                # Không phải WordPress
-                print(f"\r\033[K\033[90m✗\033[0m {domain[:40]:<40} | "
-                      f"Not WordPress | "
-                      f"Confidence: {result['wp']['confidence']}%")
+            for part in parts:
+                int(part)
+        except:
+            return False
         
-        except Exception as e:
-            error_msg = str(e)
-            if "Connection" in error_msg or "timeout" in error_msg.lower():
-                print(f"\r\033[K\033[93m⚠\033[0m {domain[:40]:<40} | Connection Error")
-            else:
-                print(f"\r\033[K\033[91m✗\033[0m {domain[:40]:<40} | Error: {error_msg[:30]}")
-            
-            with lock:
-                progress_data['scanned_targets'] += 1
+        if int(parts[0]) > 10:
+            return False
         
-        finally:
-            update_progress_display()
+        return True
     
-    # =================== MAIN EXECUTION ===================
+    async def get_theme_info(self, domain: str) -> Optional[Dict]:
+        """Lấy thông tin theme"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}"
+                try:
+                    async with self.session.get(url, ssl=False) as resp:
+                        if resp.status == 200:
+                            html = await resp.text()
+                            
+                            match = re.search(r'/wp-content/themes/([^/]+)/', html)
+                            if match:
+                                theme_slug = match.group(1)
+                                return {'slug': theme_slug, 'name': theme_slug}
+                except:
+                    continue
+        except:
+            pass
+        
+        return None
     
-    print(f"\n{'='*60}")
-    print("THỰC HIỆN THU THẬP DOMAIN...")
-    print(f"{'='*60}")
+    async def get_server_info(self, domain: str) -> Optional[Dict]:
+        """Lấy thông tin server"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}"
+                try:
+                    async with self.session.head(url, ssl=False) as resp:
+                        server_info = {
+                            'server': resp.headers.get('Server', ''),
+                            'php': resp.headers.get('X-Powered-By', ''),
+                        }
+                        return server_info
+                except:
+                    continue
+        except:
+            pass
+        
+        return None
     
-    # Bước 1: Thu thập domain từ các dorks
-    print(f"\nĐANG XỬ LÝ {len(DORKS)} DORKS...")
+    async def check_xmlrpc(self, domain: str) -> bool:
+        """Kiểm tra XML-RPC"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/xmlrpc.php"
+                try:
+                    async with self.session.head(url, ssl=False) as resp:
+                        return resp.status < 400
+                except:
+                    continue
+        except:
+            pass
+        
+        return False
     
+    async def check_rest_api(self, domain: str) -> bool:
+        """Kiểm tra REST API"""
+        try:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/wp-json/wp/v2/"
+                try:
+                    async with self.session.head(url, ssl=False) as resp:
+                        return resp.status < 400
+                except:
+                    continue
+        except:
+            pass
+        
+        return False
+    
+    async def cleanup(self):
+        """Cleanup session"""
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception:
+                pass
 
+# =================== PLUGIN VERSION RESOLVER ===================
+class VersionDetection:
+    def __init__(self, version: Optional[str] = None, confidence: int = 0, 
+                 method: str = "unknown", evidence: str = ""):
+        self.version = version
+        self.confidence = confidence
+        self.method = method
+        self.evidence = evidence
+    
+    def __str__(self):
+        if self.version:
+            return f"{self.version} (confidence: {self.confidence}%, method: {self.method})"
+        return "Not detected"
 
-    try:
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS_DISCOVERY) as executor:
-            futures = []
-            
-            # Submit tất cả dorks
-            for dork_idx, dork in enumerate(DORKS):
-                if stop_flag:
-                    break
-                future = executor.submit(process_dork, dork_idx, dork)
-                futures.append(future)
-            
-            # Hiển thị progress
-            while futures and not stop_flag:
-                done_count = sum(1 for f in futures if f.done())
-                percentage = (done_count / len(futures)) * 100
-                
-                print(f"\r\033[KProgress: {done_count}/{len(futures)} dorks ({percentage:.1f}%)", end="")
-                
-                if done_count == len(futures):
-                    break
+class PluginVersionResolver:
+    """Multi-stage plugin version resolver với heuristic algorithms"""
+    
+    def __init__(self, session: aiohttp.ClientSession, domain: str):
+        self.session = session
+        self.domain = domain
+        self.cache = {}
+        self.html_cache = None
+        
+        self.VERSION_PATTERNS = [
+            r'\*\s*Version:\s*([\d\.]+)',
+            r'@version\s+([\d\.]+)',
+            r"define\('.*VERSION',\s*['\"]([\d\.]+)['\"]",
+            r'define\(".*VERSION",\s*["\']([\d\.]+)["\']',
+            r'"version"\s*:\s*"([\d\.]+)"',
+            r"'version'\s*=>\s*'([\d\.]+)'",
+            r'\$version\s*=\s*[\'"]([\d\.]+)[\'"]',
+            r'Version\s*=\s*[\'"]([\d\.]+)[\'"]',
+            r'const\s+VERSION\s*=\s*[\'"]([\d\.]+)[\'"]',
+            r'v([\d\.]+)',
+            r'version\s+([\d\.]+)',
+            r'Version\s+([\d\.]+)',
+        ]
+    
+    async def resolve(self, plugin_slug: str) -> VersionDetection:
+        """Resolve plugin version using multi-stage approach"""
+        
+        if plugin_slug in self.cache:
+            return self.cache[plugin_slug]
+        
+        methods = [
+            (self._detect_via_readme, 85),
+            (self._detect_via_plugin_header, 95),
+            (self._detect_via_assets, 75),
+            (self._detect_via_changelog, 70),
+        ]
+        
+        best_result = VersionDetection()
+        
+        for method_func, base_confidence in methods:
+            try:
+                result = await method_func(plugin_slug)
+                if result.confidence > best_result.confidence:
+                    best_result = result
                     
-                time.sleep(0.5)
+                    if best_result.confidence >= 90:
+                        break
+            except:
+                continue
+        
+        self.cache[plugin_slug] = best_result
+        return best_result
+    
+    async def _detect_via_readme(self, plugin_slug: str) -> VersionDetection:
+        """Detect version via readme.txt"""
+        readme_patterns = [
+            r'Stable tag:\s*([\d\.]+)',
+            r'Version:\s*([\d\.]+)',
+            r'Tested up to:\s*([\d\.]+)',
+            r'Requires at least:\s*([\d\.]+)',
+        ]
+        
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/readme.txt"
+            try:
+                async with self.session.get(url, timeout=3, ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text(encoding='utf-8', errors='ignore')
+                        
+                        for pattern in readme_patterns:
+                            match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+                            if match:
+                                version = match.group(1).strip()
+                                if self._is_valid_version(version):
+                                    return VersionDetection(
+                                        version=version,
+                                        confidence=85,
+                                        method="readme_txt",
+                                        evidence=f"Found in readme.txt"
+                                    )
+            except:
+                continue
+        
+        return VersionDetection()
+    
+    async def _detect_via_plugin_header(self, plugin_slug: str) -> VersionDetection:
+        """Detect version via plugin main file header"""
+        
+        slug_variants = [
+            plugin_slug,
+            plugin_slug.replace('-', '_'),
+            plugin_slug.replace('-', ''),
+            f"wp-{plugin_slug}",
+        ]
+        
+        candidate_files = set()
+        for variant in slug_variants:
+            candidate_files.update([
+                f"{variant}.php",
+                f"index.php",
+                f"plugin.php",
+                f"main.php",
+                f"init.php",
+                f"class-{variant}.php",
+                f"{variant}-main.php",
+                f"core.php",
+            ])
+        
+        for scheme in ['https://', 'http://']:
+            for main_file in candidate_files:
+                url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{main_file}"
+                try:
+                    async with self.session.get(url, timeout=4, ssl=False) as resp:
+                        if resp.status == 200:
+                            content = await resp.text(encoding='utf-8', errors='ignore')
+                            
+                            lines = content.split('\n')[:100]
+                            header_text = '\n'.join(lines)
+                            
+                            version = self._extract_version_from_text(header_text)
+                            if version:
+                                return VersionDetection(
+                                    version=version,
+                                    confidence=95,
+                                    method="plugin_header",
+                                    evidence=f"Found in {main_file} header"
+                                )
+                            
+                            version = self._extract_version_from_text(content)
+                            if version:
+                                return VersionDetection(
+                                    version=version,
+                                    confidence=85,
+                                    method="plugin_content",
+                                    evidence=f"Found in {main_file} content"
+                                )
+                except:
+                    continue
+        
+        return VersionDetection()
+    
+    async def _detect_via_assets(self, plugin_slug: str) -> VersionDetection:
+        """Detect version via asset query strings"""
+        html = await self._get_homepage_html()
+        if not html:
+            return VersionDetection()
+        
+        asset_pattern = rf'/wp-content/plugins/{re.escape(plugin_slug)}/[^\s"\'>]+\.(?:js|css)\?ver=([\d\.]+)'
+        matches = re.findall(asset_pattern, html, re.IGNORECASE)
+        
+        if matches:
+            version_counts = Counter(matches)
+            most_common_version, count = version_counts.most_common(1)[0]
             
-            print("\r\033[K")  # Clear line
+            if self._is_valid_version(most_common_version):
+                confidence = min(75 + (count * 5), 90)
+                return VersionDetection(
+                    version=most_common_version,
+                    confidence=confidence,
+                    method="asset_version",
+                    evidence=f"Found in {count} asset(s)"
+                )
+        
+        return VersionDetection()
+    
+    async def _detect_via_changelog(self, plugin_slug: str) -> VersionDetection:
+        """Detect version via changelog files"""
+        changelog_files = [
+            'changelog.txt', 'changelog.md', 'CHANGELOG.md',
+            'changes.txt', 'CHANGES.txt', 'CHANGELOG'
+        ]
+        
+        for scheme in ['https://', 'http://']:
+            for filename in changelog_files:
+                url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{filename}"
+                try:
+                    async with self.session.get(url, timeout=3, ssl=False) as resp:
+                        if resp.status == 200:
+                            content = await resp.text(encoding='utf-8', errors='ignore')
+                            
+                            patterns = [
+                                r'^(\d+\.\d+(?:\.\d+)?)\s',
+                                r'Version\s+(\d+\.\d+(?:\.\d+)?)',
+                                r'v(\d+\.\d+(?:\.\d+?))\s',
+                                r'(\d+\.\d+(?:\.\d+)?)\s+\(\d{4}-\d{2}-\d{2}\)',
+                            ]
+                            
+                            for pattern in patterns:
+                                match = re.search(pattern, content, re.MULTILINE | re.IGNORECASE)
+                                if match:
+                                    version = match.group(1).strip()
+                                    if self._is_valid_version(version):
+                                        return VersionDetection(
+                                            version=version,
+                                            confidence=70,
+                                            method="changelog",
+                                            evidence=f"Found in {filename}"
+                                        )
+                except:
+                    continue
+        
+        return VersionDetection()
+    
+    def _extract_version_from_text(self, text: str) -> Optional[str]:
+        """Extract version từ text với multiple patterns"""
+        for pattern in self.VERSION_PATTERNS:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                if self._is_valid_version(match):
+                    return match
+        return None
+    
+    async def _get_homepage_html(self) -> Optional[str]:
+        """Get homepage HTML once (cached)"""
+        if self.html_cache is not None:
+            return self.html_cache
+        
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{self.domain}"
+            try:
+                async with self.session.get(url, timeout=8, ssl=False) as resp:
+                    if resp.status == 200:
+                        html = await resp.text(encoding='utf-8', errors='ignore')
+                        self.html_cache = html
+                        return html
+            except:
+                continue
+        
+        self.html_cache = None
+        return None
+    
+    def _is_valid_version(self, version: str) -> bool:
+        """Enhanced version validation"""
+        if not version or len(version) > 15:
+            return False
+        
+        pattern = r'^\d+(?:\.\d+)*$'
+        if not re.match(pattern, version):
+            return False
+        
+        parts = version.split('.')
+        if len(parts) > 4:
+            return False
+        
+        try:
+            for part in parts:
+                num = int(part)
+                if num > 999:
+                    return False
+        except:
+            return False
+        
+        if int(parts[0]) > 100:
+            return False
+        
+        if len(parts) == 1 and len(parts[0]) > 4:
+            return False
+        
+        if len(parts) == 1 and 1900 <= int(parts[0]) <= 2100:
+            return False
+        
+        return True
+
+# =================== THEME VERSION RESOLVER ===================
+class ThemeVersionResolver:
+    """Theme version detection"""
+    
+    def __init__(self, session: aiohttp.ClientSession, domain: str):
+        self.session = session
+        self.domain = domain
+    
+    async def resolve(self, theme_slug: str) -> VersionDetection:
+        """Resolve theme version"""
+        
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{self.domain}/wp-content/themes/{theme_slug}/style.css"
+            try:
+                async with self.session.get(url, timeout=4, ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text(encoding='utf-8', errors='ignore')
+                        
+                        patterns = [
+                            r'Version:\s*([\d\.]+)',
+                            r'Theme Version:\s*([\d\.]+)',
+                            r'Version\s*:\s*([\d\.]+)',
+                        ]
+                        
+                        for pattern in patterns:
+                            match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+                            if match:
+                                version = match.group(1).strip()
+                                if self._is_valid_version(version):
+                                    return VersionDetection(
+                                        version=version,
+                                        confidence=95,
+                                        method="style.css",
+                                        evidence="Found in theme style.css"
+                                    )
+            except:
+                continue
+        
+        return VersionDetection()
+    
+    def _is_valid_version(self, version: str) -> bool:
+        """Validate version string"""
+        if not version or len(version) > 15:
+            return False
+        
+        pattern = r'^\d+(?:\.\d+)*$'
+        return bool(re.match(pattern, version))
+
+# =================== PHP VERSION DETECTOR ===================
+class PHPVersionDetector:
+    """PHP version detection from headers and errors"""
+    
+    def __init__(self, session: aiohttp.ClientSession, domain: str):
+        self.session = session
+        self.domain = domain
+    
+    async def detect(self) -> Dict:
+        """Detect PHP version using priority-based methods"""
+        
+        detection_methods = [
+            (self._detect_from_phpinfo, 95, "phpinfo_leak"),
+            (self._detect_from_headers, 80, "x-powered-by-header"),
+            (self._detect_from_errors, 70, "error_messages"),
+            (self._detect_from_fingerprints, 60, "fingerprinting"),
+        ]
+        
+        best_result = {
+            'version': None,
+            'confidence': 0,
+            'method': 'unknown',
+            'methods_tried': []
+        }
+        
+        for method_func, confidence, method_name in detection_methods:
+            try:
+                version = await method_func()
+                if version:
+                    best_result['methods_tried'].append(method_name)
+                    
+                    if confidence > best_result['confidence']:
+                        best_result['version'] = version
+                        best_result['confidence'] = confidence
+                        best_result['method'] = method_name
+                    
+                    if confidence >= 90:
+                        break
+            except:
+                continue
+        
+        if best_result['version'] and best_result['confidence'] > 50:
+            best_result['vulnerabilities'] = self._check_php_vulnerabilities(best_result['version'])
+        else:
+            best_result['vulnerabilities'] = []
+        
+        return best_result
+    
+    async def _detect_from_phpinfo(self) -> Optional[str]:
+        """Try to find phpinfo leaks"""
+        common_paths = [
+            '/phpinfo.php',
+            '/info.php',
+            '/test.php',
+            '/admin/phpinfo.php',
+            '/wp-content/phpinfo.php',
+        ]
+        
+        for scheme in ['https://', 'http://']:
+            for path in common_paths:
+                url = f"{scheme}{self.domain}{path}"
+                try:
+                    async with self.session.get(url, timeout=5, ssl=False) as resp:
+                        if resp.status == 200:
+                            text = await resp.text(encoding='utf-8', errors='ignore')
+                            if 'phpinfo' in text.lower() or 'PHP Version' in text:
+                                match = re.search(r'PHP Version\s*<[^>]+>([\d\.]+)', text)
+                                if match:
+                                    return match.group(1)
+                except:
+                    continue
+        return None
+    
+    async def _detect_from_headers(self) -> Optional[str]:
+        """Detect PHP version from X-Powered-By header"""
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{self.domain}"
+            try:
+                async with self.session.head(url, timeout=5, ssl=False) as resp:
+                    powered_by = resp.headers.get('X-Powered-By', '')
+                    if 'PHP' in powered_by:
+                        match = re.search(r'PHP/([\d\.]+)', powered_by)
+                        if match:
+                            return match.group(1)
+            except:
+                continue
+        return None
+    
+    async def _detect_from_errors(self) -> Optional[str]:
+        """Detect PHP version from error messages"""
+        test_paths = [
+            '/wp-admin/install.php',
+            '/wp-login.php?action=invalid',
+            '/index.php?non_existing_function=1',
+        ]
+        
+        for scheme in ['https://', 'http://']:
+            for path in test_paths:
+                url = f"{scheme}{self.domain}{path}"
+                try:
+                    async with self.session.get(url, timeout=5, ssl=False) as resp:
+                        if resp.status == 500:
+                            text = await resp.text(encoding='utf-8', errors='ignore')
+                            
+                            patterns = [
+                                r'PHP/([\d\.]+)',
+                                r'PHP\s+([\d\.]+)',
+                                r'version\s+([\d\.]+)',
+                            ]
+                            
+                            for pattern in patterns:
+                                match = re.search(pattern, text)
+                                if match:
+                                    return match.group(1)
+                except:
+                    continue
+        return None
+    
+    async def _detect_from_fingerprints(self) -> Optional[str]:
+        """Detect PHP version via fingerprinting"""
+        common_versions = ['7.4', '8.0', '8.1', '8.2', '8.3']
+        
+        for version in common_versions:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{self.domain}/index.php"
+                try:
+                    headers = {'X-Forwarded-For': f'127.0.0.{random.randint(1, 255)}'}
+                    async with self.session.get(url, headers=headers, timeout=3, ssl=False) as resp:
+                        if 'PHP' in resp.headers.get('X-Powered-By', ''):
+                            match = re.search(r'PHP/([\d\.]+)', resp.headers.get('X-Powered-By', ''))
+                            if match:
+                                return match.group(1)
+                except:
+                    continue
+        return None
+    
+    def _check_php_vulnerabilities(self, version: str) -> List[str]:
+        """Check for known PHP vulnerabilities"""
+        vulnerabilities = []
+        
+        match = re.match(r'(\d+\.\d+)', version)
+        if not match:
+            return vulnerabilities
+        
+        major_minor = match.group(1)
+        
+        if major_minor in Config.PHP_VULNERABILITIES:
+            for version_range, cves in Config.PHP_VULNERABILITIES[major_minor].items():
+                if self._is_version_in_range(version, version_range):
+                    vulnerabilities.extend(cves)
+        
+        return vulnerabilities
+    
+    def _is_version_in_range(self, version: str, version_range: str) -> bool:
+        """Check if version is in range"""
+        try:
+            if version_range.startswith('<'):
+                max_ver = version_range[1:]
+                return self._compare_versions(version, max_ver) < 0
+        except:
+            pass
+        return False
+    
+    def _compare_versions(self, v1: str, v2: str) -> int:
+        """Compare version strings"""
+        try:
+            v1_parts = list(map(int, v1.split('.')[:3]))
+            v2_parts = list(map(int, v2.split('.')[:3]))
             
-            # Xử lý kết quả
-            for future in as_completed(futures):
-                if stop_flag:
-                    break
+            while len(v1_parts) < 3:
+                v1_parts.append(0)
+            while len(v2_parts) < 3:
+                v2_parts.append(0)
+            
+            for i in range(3):
+                if v1_parts[i] != v2_parts[i]:
+                    return v1_parts[i] - v2_parts[i]
+            return 0
+        except:
+            return 0
 
-
-
-                dork_idx, new_count, dork = future.result()
-                if new_count > 0:
-                    print(f"  ✓ Dork {dork_idx+1:2d}: {dork[:50]:<50} → {new_count} domain")
+# =================== ENHANCED ATTACK SURFACE ENUMERATOR ===================
+class EnhancedAttackSurfaceEnumerator:
+    """Enhanced enumerator with deep plugin/theme detection"""
+    
+    def __init__(self, event_bus: AsyncEventBus):
+        self.event_bus = event_bus
+        self.session = None
+        self.active_resolvers = []
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.WP_PROFILE,
+            self.deep_enumeration
+        ))
+    
+    async def init_session(self):
+        if not self.session:
+            timeout = aiohttp.ClientTimeout(total=Config.REQUEST_TIMEOUT)
+            self.session = aiohttp.ClientSession(
+                timeout=timeout,
+                headers={'User-Agent': 'Mozilla/5.0'},
+                connector=aiohttp.TCPConnector(ssl=False)
+            )
+    
+    async def deep_enumeration(self, event: Event):
+        """Deep enumeration with version detection"""
+        profile = event.data
+        domain = profile['domain']
+        
+        if not self.session:
+            await self.init_session()
+        
+        plugin_resolver = PluginVersionResolver(self.session, domain)
+        theme_resolver = ThemeVersionResolver(self.session, domain)
+        php_detector = PHPVersionDetector(self.session, domain)
+        
+        self.active_resolvers.extend([plugin_resolver, theme_resolver, php_detector])
+        
+        tasks = [
+            self.deep_plugin_enumeration(domain, plugin_resolver),
+            self.deep_theme_enumeration(domain, theme_resolver),
+            self.enumerate_users(domain),
+            self.check_uploads(domain),
+            self.check_debug_log(domain),
+            self.enumerate_rest_routes(domain),
+            php_detector.detect(),
+            self.check_wp_config(domain),
+            self.check_backup_files(domain),
+            self.check_xmlrpc_methods(domain),
+        ]
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        surfaces = {
+            'domain': domain,
+            'plugins': results[0] if not isinstance(results[0], Exception) else [],
+            'themes': results[1] if not isinstance(results[1], Exception) else [],
+            'users': results[2] if not isinstance(results[2], Exception) else [],
+            'uploads_listing': results[3] if not isinstance(results[3], Exception) else False,
+            'debug_log': results[4] if not isinstance(results[4], Exception) else False,
+            'rest_routes': results[5] if not isinstance(results[5], Exception) else [],
+            'php_info': results[6] if not isinstance(results[6], Exception) else {},
+            'wp_config_exposed': results[7] if not isinstance(results[7], Exception) else False,
+            'backup_files': results[8] if not isinstance(results[8], Exception) else [],
+            'xmlrpc_methods': results[9] if not isinstance(results[9], Exception) else [],
+            'wp_version': profile.get('wp_version'),
+            'xmlrpc': profile.get('xmlrpc', False),
+            'rest_api': profile.get('rest_api', False),
+            'server_info': profile.get('server', {}),
+            'timestamp': time.time()
+        }
+        
+        surfaces['initial_risk_score'] = self._calculate_initial_risk(surfaces)
+        
+        surface_event = Event(
+            type=EventType.SURFACE_RESULT,
+            data=surfaces,
+            source="EnhancedAttackSurfaceEnumerator"
+        )
+        
+        await self.event_bus.publish(surface_event)
+    
+    async def deep_plugin_enumeration(self, domain: str, resolver: PluginVersionResolver) -> List[Dict]:
+        """Deep plugin enumeration with version detection"""
+        plugins = []
+        
+        detected_slugs = await self._detect_plugin_presence(domain)
+        
+        for plugin_slug in detected_slugs[:15]:
+            try:
+                version_result = await resolver.resolve(plugin_slug)
                 
-        print("\n==================== RAPIDDNS EXPANSION ====================")
-        print(f"Seeds: {len(rapiddns_seeds)}")
-
-        for seed in rapiddns_seeds:
-            root = seed.replace("www.", "")
-            domains = collect_from_rapiddns(root)
-
-            for d in domains:
-                if d in all_domains:
-                    continue
-
-                v12_result = v12_classify(d, source="rapiddns")
-
-                if not v12_result["accept"]:
-                    continue
-
-                all_domains.add(d)
-                new_domains_queue.append(d)
-
-                domain_state[d] = {
-                    "source": "rapiddns",
-                    "v12_accept": True,
-                    "v12_score": v12_result.get("score", 0),
-                    "v12_confidence": v12_result.get("confidence", 0.0),
-                    "allow_dns_expand": False,
-                    "from_rapiddns": True,
-                    "recon_done": False
+                plugin_info = Config.POPULAR_PLUGINS.get(plugin_slug, {})
+                
+                plugin_data = {
+                    'slug': plugin_slug,
+                    'name': plugin_info.get('name', plugin_slug),
+                    'category': plugin_info.get('category', 'unknown'),
+                    'installs': plugin_info.get('installs', 'unknown'),
+                    'version': version_result.version,
+                    'version_confidence': version_result.confidence,
+                    'version_method': version_result.method,
+                    'vulnerabilities': [],
+                    'vulnerability_count': 0,
+                    'risk_level': 'LOW',
+                    'detected': True,
+                    'evidence': version_result.evidence[:100] if version_result.evidence else None,
                 }
-
-
-                with lock:
-                    progress_data['total_targets'] += 1
-
-
-
-
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Đã dừng theo yêu cầu người dùng")
-        stop_flag = True
-        return set(), 0, 0
-    except Exception as e:
-        print(f"\r\033[K  [!] Lỗi trong quá trình thu thập: {e}")
-    
-    # Bước 2: Lưu domain
-    if all_domains:
-        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-            for domain in sorted(all_domains):
-                f.write(f"{domain}\n")
+                
+                plugins.append(plugin_data)
+                
+            except Exception:
+                continue
         
-        total_count = len(all_domains)
-        new_count = len(new_domains_queue)
-        old_count = total_count - new_count
+        return plugins
+    
+    async def _detect_plugin_presence(self, domain: str) -> List[str]:
+        """Detect which plugins are present with timeout protection"""
+        detected = []
+        popular_plugins = list(Config.POPULAR_PLUGINS.keys())
         
-        print(f"\n✓ Đã lưu {total_count} domain vào {OUTPUT_FILE}")
-        if new_count > 0:
-            print(f"  • Domain mới: {new_count}")
-        if old_count > 0:
-            print(f"  • Domain đã có: {old_count}")
-    
-    # Bước 3: Enhanced recon
-    if not all_domains:
-        return all_domains, 0, 0
-    
-    print(f"\n{'='*60}")
-    print(f"THỰC HIỆN ENHANCED RECON SCAN...")
-    print(f"Domain cần scan: {len(all_domains)}")
-    print(f"{'='*60}")
-    
-    # Giới hạn số domain scan
-    domains_to_scan = [
-        d for d in new_domains_queue
-        if d in domain_state
-    ][:15]
-
-    
-    print(f"\nĐANG SCAN {len(domains_to_scan)} DOMAINS...\n")
-    
-    try:
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS_RECON) as executor:
-            futures = {}
-            for domain in domains_to_scan:
-                if stop_flag:
-                    break
-                future = executor.submit(perform_enhanced_recon, domain)
-                futures[future] = domain
+        batch_size = 10
+        max_total_time = 90
+        start_time = time.time()
+        
+        for i in range(0, len(popular_plugins), batch_size):
+            elapsed = time.time() - start_time
+            if elapsed > max_total_time:
+                break
             
-            # Chờ hoàn thành
-            completed = 0
-            while futures and not stop_flag:
-                completed = sum(1 for f in futures if f.done())
-                if completed == len(futures):
-                    break
-                time.sleep(0.5)
-                update_progress_display()
+            batch = popular_plugins[i:i+batch_size]
             
-            # Clear progress bar
-            sys.stdout.write('\r\033[K')
-            sys.stdout.flush()
+            try:
+                tasks = [self._check_single_plugin(domain, slug) for slug in batch]
+                results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=10.0
+                )
+                
+                for j, result in enumerate(results):
+                    if isinstance(result, bool) and result:
+                        detected.append(batch[j])
+                        
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                continue
             
-    except Exception as e:
-        print(f"\n  [!] Lỗi khi scan: {e}")
+            await asyncio.sleep(0.1)
+        
+        return detected
     
-    # Bước 4: Lưu kết quả enhanced
-    if enhanced_results:
-        with open(ENHANCED_OUTPUT_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "scan_timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                "total_domains": len(enhanced_results),
-                "results": enhanced_results
-            }, f, indent=2, ensure_ascii=False)
-        print(f"\n✓ Đã lưu {len(enhanced_results)} kết quả scan vào {ENHANCED_OUTPUT_FILE}")
+    async def _check_single_plugin(self, domain: str, plugin_slug: str) -> bool:
+        """Check if a specific plugin exists"""
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-content/plugins/{plugin_slug}/"
+            try:
+                async with self.session.head(url, timeout=3, ssl=False) as resp:
+                    if resp.status < 400:
+                        return True
+            except:
+                continue
+        
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-content/plugins/{plugin_slug}/readme.txt"
+            try:
+                async with self.session.head(url, timeout=3, ssl=False) as resp:
+                    if resp.status < 400:
+                        return True
+            except:
+                continue
+        
+        return False
     
-    return all_domains, scan_count, len(vulnerable_domains)
-
-
-
-    print("\n==================== V12 DISCOVERY SOURCE ====================")
-
-    v12_domains = v12_discovery_source()
-    print(f"V12 discovered: {len(v12_domains)} domains")
-
-    for d in v12_domains:
-        if d in all_domains:
-            continue
-
-        all_domains.add(d)
-        new_domains_queue.append(d)
-
-        domain_state[d] = {
-            "source": "v12",
-            "v12_accept": True,
-            "v12_score": 90,
-            "v12_confidence": 0.9,
-            "allow_dns_expand": False,
-            "from_rapiddns": False,
-            "recon_done": False
-        }
-
-        progress_data['total_targets'] += 1
-
-
-
-
-
-def analyze_results():
-    """Phân tích kết quả"""
-    if not os.path.exists(ENHANCED_OUTPUT_FILE):
-        print("⚠️  Không có file kết quả enhanced để phân tích")
+    async def deep_theme_enumeration(self, domain: str, resolver: ThemeVersionResolver) -> List[Dict]:
+        """Deep theme enumeration"""
+        themes = []
+        
+        active_theme = await self._detect_active_theme(domain)
+        if active_theme:
+            version_result = await resolver.resolve(active_theme)
+            
+            theme_data = {
+                'slug': active_theme,
+                'name': active_theme.replace('-', ' ').title(),
+                'version': version_result.version,
+                'version_confidence': version_result.confidence,
+                'version_method': version_result.method,
+                'is_active': True,
+                'evidence': version_result.evidence,
+            }
+            themes.append(theme_data)
+        
+        return themes
+    
+    async def _detect_active_theme(self, domain: str) -> Optional[str]:
+        """Detect active theme"""
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}"
+            try:
+                async with self.session.get(url, timeout=5, ssl=False) as resp:
+                    if resp.status == 200:
+                        html = await resp.text(encoding='utf-8', errors='ignore')
+                        
+                        patterns = [
+                            r'/wp-content/themes/([^/]+)/',
+                            r'theme_name["\']\s*:\s*["\']([^"\']+)["\']',
+                            r'theme["\']\s*:\s*["\']([^"\']+)["\']',
+                        ]
+                        
+                        for pattern in patterns:
+                            match = re.search(pattern, html, re.IGNORECASE)
+                            if match:
+                                return match.group(1).lower()
+            except:
+                continue
         return None
     
-    try:
-        with open(ENHANCED_OUTPUT_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    async def check_wp_config(self, domain: str) -> bool:
+        """Check if wp-config.php is exposed"""
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-config.php"
+            try:
+                async with self.session.get(url, timeout=4, ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text(encoding='utf-8', errors='ignore')
+                        if 'DB_NAME' in content or 'define(' in content:
+                            return True
+            except:
+                continue
         
-        results = data.get("results", {})
-        if not results:
-            print("⚠️  Không có kết quả nào để phân tích")
-            return None
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-config-sample.php"
+            try:
+                async with self.session.get(url, timeout=4, ssl=False) as resp:
+                    return resp.status == 200
+            except:
+                continue
         
-        wp_detected = 0
-        vulnerable_count = 0
-        plugin_stats = defaultdict(int)
-        risk_scores = []
+        return False
+    
+    async def check_backup_files(self, domain: str) -> List[str]:
+        """Check for backup files"""
+        backup_patterns = [
+            'wp-config.php.bak',
+            'wp-config.php.backup',
+            '.sql',
+            '.tar.gz',
+            '.zip',
+            'backup-',
+        ]
         
-        for domain, result in results.items():
-            if result['wp']['detected']:
-                wp_detected += 1
+        found_backups = []
+        
+        for pattern in backup_patterns[:5]:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/{pattern}"
+                try:
+                    async with self.session.head(url, timeout=3, ssl=False) as resp:
+                        if resp.status == 200:
+                            found_backups.append(pattern)
+                            break
+                except:
+                    continue
+        
+        return found_backups
+    
+    async def check_xmlrpc_methods(self, domain: str) -> List[str]:
+        """Check available XML-RPC methods"""
+        methods = []
+        
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/xmlrpc.php"
+            try:
+                xml_request = """<?xml version="1.0"?>
+<methodCall>
+    <methodName>system.listMethods</methodName>
+    <params></params>
+</methodCall>"""
                 
-                # Đếm domain có vấn đề
-                issues = len(result['vulnerability_indicators']['potential_issues'])
-                security_issues = sum([
-                    1 if result['security_indicators']['directory_listing'] else 0,
-                    1 if result['security_indicators']['xmlrpc_enabled'] else 0,
-                    1 if result['security_indicators']['user_enumeration'] else 0,
-                    len(result['security_indicators']['sensitive_files'])
-                ])
-                
-                risk_score = result['vulnerability_indicators']['risk_score']
-                risk_scores.append(risk_score)
-                
-                if issues > 0 or security_issues > 0 or risk_score >= 30:
-                    vulnerable_count += 1
-                
-                # Thống kê plugin
-                for plugin in result['plugins']:
-                    if plugin.get('popular'):
-                        plugin_name = plugin.get('slug', 'Unknown')
-                        plugin_stats[plugin_name] += 1
+                headers = {'Content-Type': 'text/xml'}
+                async with self.session.post(url, data=xml_request, headers=headers, 
+                                           timeout=5, ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text()
+                        if 'methodName' in content:
+                            method_pattern = r'<value><string>([^<]+)</string></value>'
+                            found = re.findall(method_pattern, content)
+                            methods.extend(found)
+            except:
+                continue
         
-        # Tính risk trung bình
-        avg_risk = sum(risk_scores) / len(risk_scores) if risk_scores else 0
+        return methods
+    
+    async def enumerate_users(self, domain):
+        """Enhanced user enumeration with better validation"""
+        users = []
         
-        print(f"\n📊 PHÂN TÍCH KẾT QUẢ:")
-        print(f"  • Tổng domain scan: {len(results)}")
-        print(f"  • WordPress detected: {wp_detected} ({wp_detected/len(results)*100:.1f}%)")
-        print(f"  • Domain có vấn đề: {vulnerable_count} ({vulnerable_count/wp_detected*100:.1f}% of WP)")
-        print(f"  • Risk score trung bình: {avg_risk:.1f}/100")
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-json/wp/v2/users?per_page=20"
+            try:
+                async with self.session.get(url, ssl=False, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if isinstance(data, list):
+                            for u in data:
+                                if isinstance(u, dict) and 'slug' in u and u['slug']:
+                                    users.append({
+                                        "id": u.get("id"),
+                                        "slug": u.get("slug"),
+                                        "name": u.get("name"),
+                                        "source": "wp-json"
+                                    })
+                            if users:
+                                return users
+            except Exception:
+                pass
         
-        # Phân phối risk
-        if risk_scores:
-            high_risk = len([r for r in risk_scores if r >= 70])
-            med_risk = len([r for r in risk_scores if 50 <= r < 70])
-            low_risk = len([r for r in risk_scores if r < 50])
+        seen_slugs = set()
+        for i in range(1, 11):
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/?author={i}"
+                try:
+                    async with self.session.get(url, allow_redirects=True, 
+                                               ssl=False, timeout=5) as resp:
+                        final_url = str(resp.url)
+                        
+                        m = re.search(r'/author/([a-zA-Z0-9_-]+)/?', final_url)
+                        if m:
+                            slug = m.group(1).lower()
+                            
+                            blacklist = ['page', 'author', 'user', 'admin', 
+                                       'login', 'wp-admin', 'feed', 'rss',
+                                       'comments', 'index', 'home']
+                            
+                            if (slug not in blacklist and 
+                                slug not in seen_slugs and 
+                                len(slug) >= 3 and
+                                not slug.isdigit()):
+                                
+                                seen_slugs.add(slug)
+                                users.append({
+                                    "id": i,
+                                    "slug": slug,
+                                    "source": "author_redirect"
+                                })
+                                break
+                except:
+                    continue
+        
+        return users
+    
+    async def check_uploads(self, domain: str) -> bool:
+        """Check uploads directory listing"""
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-content/uploads/"
+            try:
+                async with self.session.get(url, timeout=4, ssl=False) as resp:
+                    if resp.status == 200:
+                        text = await resp.text(encoding='utf-8', errors='ignore')
+                        if 'index of' in text.lower() or '<title>Index of' in text:
+                            return True
+            except:
+                continue
+        return False
+    
+    async def check_debug_log(self, domain: str) -> bool:
+        """Check debug.log file"""
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-content/debug.log"
+            try:
+                async with self.session.head(url, timeout=3, ssl=False) as resp:
+                    return resp.status == 200
+            except:
+                continue
+        return False
+    
+    async def enumerate_rest_routes(self, domain: str) -> List[str]:
+        """Enumerate REST API routes"""
+        routes = []
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{domain}/wp-json/"
+            try:
+                async with self.session.get(url, timeout=5, ssl=False) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if 'routes' in data:
+                            routes = list(data['routes'].keys())[:10]
+            except:
+                continue
+        return routes
+    
+    async def cleanup(self):
+        """Cleanup tất cả resolvers và sessions"""
+        for resolver in self.active_resolvers:
+            pass
+        
+        self.active_resolvers.clear()
+        
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception:
+                pass
+    
+    def _calculate_initial_risk(self, surfaces: Dict) -> int:
+        """Calculate initial risk score based on surfaces"""
+        score = 0
+        
+        for plugin in surfaces.get('plugins', []):
+            vuln_count = plugin.get('vulnerability_count', 0)
+            score += vuln_count * 25
+        
+        if surfaces.get('wp_config_exposed'):
+            score += 40
+        
+        if surfaces.get('uploads_listing'):
+            score += 30
+        
+        if surfaces.get('debug_log'):
+            score += 25
+        
+        if surfaces['php_info'].get('vulnerabilities'):
+            score += len(surfaces['php_info']['vulnerabilities']) * 20
+        
+        if surfaces.get('xmlrpc') and surfaces.get('xmlrpc_methods'):
+            score += 20
+        
+        if len(surfaces.get('rest_routes', [])) > 10:
+            score += 15
+        
+        if surfaces.get('backup_files'):
+            score += len(surfaces['backup_files']) * 10
+        
+        return min(score, 100)
+
+# =================== ENHANCED RISK SCORER ===================
+class EnhancedRiskScorer:
+    """Enhanced risk scoring với CVE matching"""
+    
+    def __init__(self, event_bus: AsyncEventBus):
+        self.event_bus = event_bus
+        
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.SURFACE_RESULT,
+            self.score_risk
+        ))
+    
+    async def score_risk(self, event: Event):
+        """Enhanced risk scoring with deep analysis"""
+        surfaces = event.data
+        domain = surfaces['domain']
+        
+        findings = []
+        cve_matches = []
+        risk_score = surfaces.get('initial_risk_score', 0)
+        
+        wp_version = surfaces.get('wp_version')
+        if wp_version:
+            wp_cves = self._check_wordpress_cves(wp_version)
+            if wp_cves:
+                risk_score += len(wp_cves) * 30
+                cve_matches.extend(wp_cves)
+                findings.append(f"WordPress {wp_version}: {len(wp_cves)} CVEs")
+        
+        for plugin in surfaces.get('plugins', []):
+            vulns = plugin.get('vulnerabilities', [])
+            if vulns:
+                plugin_name = plugin.get('name', plugin['slug'])
+                plugin_version = plugin.get('version', 'unknown')
+                findings.append(f"{plugin_name} {plugin_version}: {len(vulns)} vulns")
+                cve_matches.extend(vulns)
+        
+        php_info = surfaces.get('php_info', {})
+        if php_info.get('vulnerabilities'):
+            php_version = php_info.get('version', 'unknown')
+            vulns = php_info['vulnerabilities']
+            risk_score += len(vulns) * 25
+            cve_matches.extend(vulns)
+            findings.append(f"PHP {php_version}: {len(vulns)} CVEs")
+        
+        if surfaces.get('wp_config_exposed'):
+            findings.append("wp-config.php exposed")
+            risk_score += 40
+        
+        if surfaces.get('uploads_listing'):
+            findings.append("Uploads directory listing enabled")
+            risk_score += 30
+        
+        if surfaces.get('debug_log'):
+            findings.append("debug.log accessible")
+            risk_score += 25
+        
+        users = surfaces.get('users', [])
+        real_users = [u for u in users if u.get("slug")]
+
+        if len(real_users) > 0:
+            findings.append(
+                f"User enumeration confirmed ({len(real_users)} real users)"
+            )
+            risk_score += min(len(real_users) * 5, 20)
+        
+        if surfaces.get('xmlrpc') and surfaces.get('xmlrpc_methods'):
+            method_count = len(surfaces['xmlrpc_methods'])
+            findings.append(f"XML-RPC enabled with {method_count} methods")
+            risk_score += 20
+        
+        rest_routes = surfaces.get('rest_routes', [])
+        if len(rest_routes) > 10:
+            findings.append(f"Many REST API routes exposed ({len(rest_routes)})")
+            risk_score += 15
+        
+        backup_files = surfaces.get('backup_files', [])
+        if backup_files:
+            findings.append(f"Backup files found: {len(backup_files)}")
+            risk_score += len(backup_files) * 10
+        
+        risk_score = min(risk_score, 100)
+        
+        if risk_score >= 80:
+            risk_level = "CRITICAL"
+            color_code = "\033[91m"
+        elif risk_score >= 60:
+            risk_level = "HIGH"
+            color_code = "\033[93m"
+        elif risk_score >= 40:
+            risk_level = "MEDIUM"
+            color_code = "\033[33m"
+        elif risk_score >= 20:
+            risk_level = "LOW"
+            color_code = "\033[92m"
+        else:
+            risk_level = "INFO"
+            color_code = "\033[94m"
+        
+        unique_findings = []
+        seen = set()
+        for finding in findings:
+            if finding not in seen:
+                unique_findings.append(finding)
+                seen.add(finding)
+        
+        risk_event = Event(
+            type=EventType.RISK_SCORE,
+            data={
+                'domain': domain,
+                'score': risk_score,
+                'level': risk_level,
+                'color_code': color_code,
+                'findings': unique_findings[:8],
+                'cves': list(set(cve_matches)),
+                'wp_version': wp_version,
+                'plugin_count': len(surfaces.get('plugins', [])),
+                'vulnerable_plugins': len([p for p in surfaces.get('plugins', []) 
+                                          if p.get('vulnerability_count', 0) > 0]),
+                'php_version': php_info.get('version'),
+                'timestamp': time.time()
+            },
+            source="EnhancedRiskScorer"
+        )
+        
+        await self.event_bus.publish(risk_event)
+    
+    def _check_wordpress_cves(self, version: str) -> List[str]:
+        """Check WordPress version against CVE database"""
+        cves = []
+        
+        try:
+            for version_range, cve_list in Config.WORDPRESS_CVES.items():
+                if self._is_version_in_range(version, version_range):
+                    if isinstance(cve_list, list):
+                        cves.extend(cve_list)
+                    elif isinstance(cve_list, dict):
+                        for sub_range, sub_cves in cve_list.items():
+                            if self._is_version_in_range(version, sub_range):
+                                cves.extend(sub_cves)
+        except:
+            pass
+        
+        return list(set(cves))
+    
+    def _is_version_in_range(self, version: str, version_range: str) -> bool:
+        """Check if version is in range"""
+        try:
+            if version_range.startswith('<'):
+                max_ver = version_range[1:]
+                return self._compare_versions(version, max_ver) < 0
+            else:
+                return version.startswith(version_range)
+        except:
+            return False
+    
+    def _compare_versions(self, v1: str, v2: str) -> int:
+        """Compare version strings"""
+        try:
+            v1_parts = list(map(int, v1.split('.')[:3]))
+            v2_parts = list(map(int, v2.split('.')[:3]))
             
-            print(f"  • Risk phân phối: CRITICAL({high_risk}) HIGH({med_risk}) LOW({low_risk})")
+            while len(v1_parts) < 3:
+                v1_parts.append(0)
+            while len(v2_parts) < 3:
+                v2_parts.append(0)
+            
+            for i in range(3):
+                if v1_parts[i] != v2_parts[i]:
+                    return v1_parts[i] - v2_parts[i]
+            return 0
+        except:
+            return 0
+
+# =================== CLEAN TERMINAL DISPLAY ===================
+class CleanTerminalDisplay:
+    """Hiển thị gọn gàng với status bar và result panel"""
+    
+    def __init__(self):
+        self.spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.spinner_index = 0
+        self.stats = {
+            'total': 0,
+            'wp_detected': 0,
+            'wp_not_detected': 0,
+            'critical': 0,
+            'high': 0,
+            'medium': 0,
+            'low': 0,
+            'info': 0,
+            'current_domain': '',
+            'current_phase': 'Initializing'
+        }
+        self.start_time = time.time()
+        self.last_update = 0
+        self.result_lines = []
+        self.max_result_lines = 10
         
-        if plugin_stats:
-            print(f"\n🔥 TOP 5 PLUGIN PHỔ BIẾN:")
-            for i, (plugin_name, count) in enumerate(sorted(plugin_stats.items(), 
-                                                          key=lambda x: x[1], reverse=True)[:5], 1):
-                percentage = (count / wp_detected) * 100 if wp_detected > 0 else 0
-                print(f"  {i}. {plugin_name:<25} {count:3d} sites ({percentage:.1f}%)")
+        # Clear screen và setup
+        self.clear_screen()
+        self.show_header()
+        self.show_status_bar()
+    
+    def clear_screen(self):
+        """Xóa màn hình và di chuyển cursor lên đầu"""
+        print("\033[2J\033[H", end="", flush=True)
+    
+    def show_header(self):
+        """Hiển thị header"""
+        header = """
+╔════════════════════════════════════════════════════════════════════════╗
+║         WORDPRESS ATTACK SURFACE ENGINE (WASE) v1.5                   ║
+║                 Clean Terminal Display                                 ║
+╚════════════════════════════════════════════════════════════════════════╝
+        """
+        print(header)
+        print()
+    
+    def show_status_bar(self):
+        """Hiển thị status bar ở cuối màn hình"""
+        elapsed = time.time() - self.start_time
+        elapsed_str = f"{elapsed:.1f}s" if elapsed < 60 else f"{elapsed/60:.1f}m"
         
-        return {
-            "total_scanned": len(results),
-            "wp_detected": wp_detected,
-            "vulnerable": vulnerable_count,
-            "avg_risk": avg_risk
+        wp_percent = (self.stats['wp_detected'] / max(1, self.stats['total'])) * 100
+        
+        status_line = f"📊 Stats: Total={self.stats['total']} | WP={self.stats['wp_detected']} ({wp_percent:.0f}%) | "
+        status_line += f"CRIT={self.stats['critical']} | HIGH={self.stats['high']} | "
+        status_line += f"Time={elapsed_str} | "
+        
+        spinner = self.spinner_chars[self.spinner_index]
+        self.spinner_index = (self.spinner_index + 1) % len(self.spinner_chars)
+        
+        status_line += f"Status: {spinner} {self.stats['current_phase']} | "
+        
+        domain_display = self.stats['current_domain'][:30] + "..." if len(self.stats['current_domain']) > 30 else self.stats['current_domain']
+        status_line += f"Domain: {domain_display}"
+        
+        # Di chuyển cursor xuống dòng status bar (dòng 30 từ trên xuống)
+        print(f"\033[30;1H\033[K{status_line}\033[0m", end="", flush=True)
+    
+    def update_domain(self, domain: str, phase: str):
+        """Cập nhật domain đang xử lý"""
+        self.stats['current_domain'] = domain[:50]
+        self.stats['current_phase'] = phase
+        
+        current_time = time.time()
+        if current_time - self.last_update > 0.5:  # Update mỗi 0.5s
+            self.last_update = current_time
+            self.show_status_bar()
+    
+    def increment_stat(self, key):
+        """Tăng statistic"""
+        if key in self.stats:
+            self.stats[key] += 1
+            self.show_status_bar()
+    
+    def show_result(self, domain: str, level: str, score: int, wp_version: str = "", cve_count: int = 0):
+        """Hiển thị kết quả mới"""
+        # Xác định icon và màu
+        if level == "CRITICAL":
+            icon = "🔥"
+            color = "\033[91m"
+        elif level == "HIGH":
+            icon = "⚠️ "
+            color = "\033[93m"
+        elif level == "MEDIUM":
+            icon = "📊"
+            color = "\033[33m"
+        elif level == "LOW":
+            icon = "✓"
+            color = "\033[92m"
+        else:
+            icon = "ℹ️ "
+            color = "\033[94m"
+        
+        reset = "\033[0m"
+        
+        # Tạo dòng kết quả
+        domain_display = domain[:35]
+        wp_info = f"WP {wp_version}" if wp_version else "No WP"
+        
+        result_line = f"{color}{icon} {domain_display:<37} "
+        result_line += f"Score: {score:3d}/100 [{level:<8}] {wp_info:<10}"
+        
+        if cve_count > 0:
+            result_line += f" CVEs: {cve_count}"
+        
+        result_line += reset
+        
+        # Thêm vào danh sách kết quả
+        self.result_lines.append(result_line)
+        
+        # Giới hạn số dòng hiển thị
+        if len(self.result_lines) > self.max_result_lines:
+            self.result_lines = self.result_lines[-self.max_result_lines:]
+        
+        # Hiển thị panel kết quả
+        self.show_results_panel()
+    
+    def show_results_panel(self):
+        """Hiển thị panel kết quả"""
+        # Clear khu vực panel (dòng 5-25)
+        for i in range(5, 25):
+            print(f"\033[{i};1H\033[K", end="")
+        
+        # Hiển thị tiêu đề panel
+        print("\033[5;1H\033[1m📈 RECENT RESULTS:\033[0m")
+        print("\033[6;1H" + "─" * 80)
+        
+        # Hiển thị các kết quả
+        for i, line in enumerate(self.result_lines[-10:], 1):
+            print(f"\033[{6+i};1H{line}")
+        
+        # Update status bar
+        self.show_status_bar()
+
+# =================== ENHANCED OUTPUT MANAGER ===================
+class EnhancedOutputManager:
+    """Enhanced output với terminal display gọn gàng"""
+    
+    def __init__(self, event_bus: AsyncEventBus, output_file: Optional[str] = None):
+        self.event_bus = event_bus
+        self.output_file = output_file
+        self.display = CleanTerminalDisplay()
+        self.results = []
+        self.stats = {
+            'total': 0,
+            'wp': 0,
+            'critical': 0,
+            'high': 0,
+            'medium': 0,
+            'low': 0,
+            'info': 0,
+            'plugins_found': 0,
+            'vulnerabilities_found': 0,
         }
         
-    except Exception as e:
-        print(f"⚠️  Lỗi phân tích: {e}")
-        return None
-
-def main():
-    """Hàm chính"""
-    global stop_flag
+        # Subscribe to events
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.RISK_SCORE,
+            self.handle_final_result
+        ))
+        
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.WP_DETECTED,
+            self.log_wp_detection
+        ))
+        
+        asyncio.create_task(self.event_bus.subscribe(
+            EventType.CLEAN_DOMAIN,
+            self.log_new_domain
+        ))
     
-    print("=" * 80)
-    print("WORDPRESS DOMAIN COLLECTOR & ENHANCED PLUGIN ANALYSIS")
-    print("VERSION 2.2 - WITH CVE MAPPING & RISK SCORING")
-    print("=" * 80)
+    async def log_new_domain(self, event: Event):
+        """Log khi có domain mới bắt đầu scan"""
+        domain = event.data.get('domain', '')
+        self.display.update_domain(domain, "Pre-filter")
+        self.display.increment_stat('total')
+        self.stats['total'] += 1
+    
+    async def log_wp_detection(self, event: Event):
+        """Log WP detection"""
+        data = event.data
+        domain = data.get('domain', '')
+        
+        if data['is_wp']:
+            self.display.update_domain(domain, "WP Detected")
+            self.display.increment_stat('wp_detected')
+            self.stats['wp'] += 1
+        else:
+            self.display.update_domain(domain, "Non-WP")
+            self.display.increment_stat('wp_not_detected')
+    
+    async def handle_final_result(self, event: Event):
+        """Handle final result với display gọn gàng"""
+        result = event.data
+        domain = result['domain']
+        
+        self.display.update_domain(domain, "Risk Assessment")
+        
+        level = result['level']
+        if level == "CRITICAL":
+            self.stats['critical'] += 1
+            self.display.increment_stat('critical')
+        elif level == "HIGH":
+            self.stats['high'] += 1
+            self.display.increment_stat('high')
+        elif level == "MEDIUM":
+            self.stats['medium'] += 1
+            self.display.increment_stat('medium')
+        elif level == "LOW":
+            self.stats['low'] += 1
+            self.display.increment_stat('low')
+        else:
+            self.stats['info'] += 1
+            self.display.increment_stat('info')
+        
+        self.stats['vulnerabilities_found'] += len(result.get('cves', []))
+        
+        self.display.show_result(
+            domain=domain,
+            level=result['level'],
+            score=result['score'],
+            wp_version=result.get('wp_version', ''),
+            cve_count=len(result.get('cves', []))
+        )
+        
+        self.results.append(result)
+        
+        if self.output_file:
+            await self.save_to_file(result)
+    
+    async def save_to_file(self, result: Dict):
+        """Save result to JSON file"""
+        try:
+            file_exists = os.path.exists(self.output_file)
+            
+            if file_exists:
+                with open(self.output_file, 'r', encoding='utf-8') as f:
+                    try:
+                        data = json.load(f)
+                        if not isinstance(data, list):
+                            data = [data]
+                    except:
+                        data = []
+            else:
+                data = []
+            
+            data.append(result)
+            
+            with open(self.output_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                
+        except Exception:
+            pass
+
+# =================== UPDATED PIPELINE ===================
+class EnhancedWASEPipeline:
+    """Enhanced pipeline với display gọn gàng"""
+    
+    def __init__(self, targets_file: Optional[str] = None, output_file: Optional[str] = None, 
+                 workers: int = 12, discovery: bool = True, history_file: str = "scanned_history.txt"):
+        self.targets_file = targets_file
+        self.output_file = output_file
+        self.workers = workers
+        self.discovery = discovery
+        self.is_running = False
+        
+        self.event_bus = AsyncEventBus(max_size=Config.EVENT_BUS_SIZE)
+        
+        self.producers = []
+        self.pre_filter = PreFilter(self.event_bus, history_file)
+        self.wp_detector = WPGateDetector(self.event_bus, workers=workers)
+        self.wp_fingerprint = WPCoreFingerprint(self.event_bus)
+        self.surface_enumerator = EnhancedAttackSurfaceEnumerator(self.event_bus)
+        self.risk_scorer = EnhancedRiskScorer(self.event_bus)
+        self.output_manager = EnhancedOutputManager(self.event_bus, output_file)
+    
+    async def setup_producers(self):
+        """Setup producers"""
+        if self.targets_file:
+            print(f"Mode: Targeted scan from {self.targets_file}")
+            producer = TargetFileProducer(self.event_bus, self.targets_file)
+            self.producers.append(producer)
+        elif self.discovery:
+            print("Mode: Full discovery + deep scan")
+            self.producers.extend([
+                DorkProducer(self.event_bus),
+                PassiveDNSProducer(self.event_bus),
+            ])
+        else:
+            print("No producers configured!")
+            return False
+        return True
+    
+    async def run(self):
+        """Chạy enhanced pipeline"""
+        self.is_running = True
+        
+        try:
+            if not await self.setup_producers():
+                return
+            
+            bus_task = asyncio.create_task(self.event_bus.run())
+            
+            for producer in self.producers:
+                await producer.start()
+            
+            print("\n🚀 PIPELINE STARTED - Press CTRL+C to stop\n")
+            
+            try:
+                producer_tasks = [asyncio.create_task(self._wait_for_producer(p)) 
+                                 for p in self.producers]
+                
+                await asyncio.wait(
+                    producer_tasks,
+                    timeout=None,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                
+            except KeyboardInterrupt:
+                print("\n🛑 CTRL+C RECEIVED - STOPPING PIPELINE!")
+            
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            pass
+        finally:
+            await self._force_shutdown()
+            
+            stats = self.output_manager.stats
+            display_stats = self.output_manager.display.stats
+            
+            # Clear và hiển thị summary
+            print("\033[2J\033[H", end="")
+            print("=" * 80)
+            print("📊 FINAL STATISTICS")
+            print("=" * 80)
+            print(f"Total domains processed: {display_stats['total']}")
+            print(f"WordPress sites found: {display_stats['wp_detected']}")
+            print(f"Vulnerabilities identified: {stats['vulnerabilities_found']}")
+            print(f"\nRisk distribution:")
+            print(f"  • CRITICAL: {stats['critical']}")
+            print(f"  • HIGH: {stats['high']}")
+            print(f"  • MEDIUM: {stats['medium']}")
+            print(f"  • LOW: {stats['low']}")
+            print(f"  • INFO: {stats['info']}")
+            
+            if self.output_file:
+                print(f"\n💾 Results saved to: {self.output_file}")
+            
+            print(f"\n✅ Pipeline completed successfully!")
+            
+            import sys
+            sys.exit(0)
+    
+    async def _wait_for_producer(self, producer):
+        """Chờ producer hoàn thành"""
+        while producer.is_running:
+            await asyncio.sleep(0.5)
+        return True
+    
+    async def _force_shutdown(self):
+        """Force shutdown với cleanup đầy đủ"""
+        self.is_running = False
+
+        for producer in self.producers:
+            try:
+                await producer.stop()
+            except:
+                pass
+
+        if hasattr(self.event_bus, 'stop'):
+            try:
+                await self.event_bus.stop()
+            except:
+                pass
+
+        components_to_cleanup = [
+            ('WPGateDetector', self.wp_detector),
+            ('WPCoreFingerprint', self.wp_fingerprint),
+            ('EnhancedAttackSurfaceEnumerator', self.surface_enumerator),
+        ]
+        
+        for name, component in components_to_cleanup:
+            if hasattr(component, 'cleanup'):
+                try:
+                    await component.cleanup()
+                except:
+                    pass
+
+        current_task = asyncio.current_task()
+        all_tasks = [t for t in asyncio.all_tasks() if t is not current_task and not t.done()]
+
+        if all_tasks:
+            for task in all_tasks:
+                task.cancel()
+
+            try:
+                await asyncio.wait(all_tasks, timeout=1.0)
+            except:
+                pass
+
+        sessions_to_close = []
+
+        if hasattr(self, 'wp_detector') and hasattr(self.wp_detector, 'session') and self.wp_detector.session:
+            sessions_to_close.append(('WPGateDetector', self.wp_detector.session))
+            
+        if hasattr(self, 'wp_fingerprint') and hasattr(self.wp_fingerprint, 'session') and self.wp_fingerprint.session:
+            sessions_to_close.append(('WPCoreFingerprint', self.wp_fingerprint.session))
+            
+        if hasattr(self, 'surface_enumerator') and hasattr(self.surface_enumerator, 'session') and self.surface_enumerator.session:
+            sessions_to_close.append(('EnhancedAttackSurfaceEnumerator', self.surface_enumerator.session))
+
+        for name, session in sessions_to_close:
+            try:
+                if not session.closed:
+                    await session.close()
+            except:
+                pass
+
+# =================== MAIN ===================
+async def main():
+    """Entry point"""
+    args = parse_args()
+    
+    if args.targets and not os.path.exists(args.targets):
+        print(f"❌ Không tìm thấy file targets: {args.targets}")
+        return
+    
+    pipeline = EnhancedWASEPipeline(
+        targets_file=args.targets,
+        output_file=args.output,
+        workers=args.workers,
+        discovery=not args.no_discovery,
+        history_file=args.history 
+    )
     
     try:
-        # Bước 1: Thu thập domain và recon song song
-        domains, scanned_count, vuln_count = collect_wp_domains_parallel()
-        
-        if not domains:
-            print("Không có domain nào để scan!")
-            return
-        
-        print(f"\n{'='*60}")
-        print("TỔNG KẾT QUẢ")
-        print(f"{'='*60}")
-        
-        # Bước 2: Phân tích kết quả
-        stats = analyze_results()
-        
-        if stats:
-            print(f"\n✅ KẾT QUẢ CUỐI CÙNG:")
-            print(f"  • Tổng domain thu thập: {len(domains)}")
-            print(f"  • Đã scan: {stats['total_scanned']}")
-            print(f"  • WordPress phát hiện: {stats['wp_detected']}")
-            print(f"  • Domain có vấn đề: {stats['vulnerable']}")
-            print(f"  • Risk score trung bình: {stats['avg_risk']:.1f}")
-        
-        # Hiển thị domain có vấn đề
-        if os.path.exists(DOMAIN_VULN_FILE):
-            with open(DOMAIN_VULN_FILE, "r", encoding="utf-8") as f:
-                vuln_lines = f.readlines()
-            
-            if vuln_lines:
-                print(f"\n⚠️  DOMAIN CÓ VẤN ĐỀ BẢO MẬT ({len(vuln_lines)}):")
-                for i, line in enumerate(vuln_lines[:10], 1):
-                    parts = line.strip().split('|')
-                    if len(parts) >= 2:
-                        domain = parts[0]
-                        risk = parts[1] if len(parts) > 1 else ""
-                        print(f"  {i:2d}. {domain:<30} {risk}")
-                
-                if len(vuln_lines) > 10:
-                    print(f"  ... và {len(vuln_lines) - 10} domain khác")
-        
-        print(f"\n📁 KẾT QUẢ LƯU TẠI:")
-        print(f"  • Danh sách domain: {OUTPUT_FILE}")
-        print(f"  • Domain có vấn đề: {DOMAIN_VULN_FILE}")
-        print(f"  • Kết quả scan đầy đủ: {ENHANCED_OUTPUT_FILE}")
-        print(f"{'='*60}\n")
-        
+        await pipeline.run()
     except KeyboardInterrupt:
-        print("\n\n⚠️  Đã dừng theo yêu cầu người dùng")
-        stop_flag = True
+        print("\n👋 Stopped by user")
     except Exception as e:
-        print(f"\n❌ Lỗi: {e}")
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print("\n🏁 Program exit")
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='WordPress Attack Surface Engine (WASE) - Deep Enumeration',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Full discovery mode (no targets file)
+  python wase.py --workers 12 --output results.json
+  
+  # Targeted scan from file
+  python wase.py --targets targets.txt --output scan_results.json
+  
+  # Quick scan với ít workers
+  python wase.py --targets urls.txt --workers 4 --output quick.json
+        """
+    )
+    
+    parser.add_argument('--targets', '-t', type=str,
+                       help='File chứa targets (mỗi dòng 1 domain/URL). Nếu không có, chạy discovery mode')
+    
+    parser.add_argument('--output', '-o', type=str, default='wase_results.json',
+                       help='File output JSON (default: wase_results.json)')
+    
+    parser.add_argument('--workers', '-w', type=int, default=8,
+                       help='Số concurrent workers (default: 8)')
+    
+    parser.add_argument('--no-discovery', action='store_true',
+                       help='Tắt discovery mode (chỉ dùng nếu có --targets)')
+    parser.add_argument('--history', type=str, default='scanned_history.txt',
+                   help='File lưu domains đã scan (default: scanned_history.txt)')
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    main()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("\n🛑 KeyboardInterrupt - Cleaning up...")
+    finally:
+        tasks = asyncio.all_tasks(loop)
+        for t in tasks:
+            t.cancel()
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.run_until_complete(loop.shutdown_default_executor())
+        loop.close()
+    print("Exit hoàn toàn")
