@@ -1,0 +1,15 @@
+[
+  {
+    "domain": "youtube.com",
+    "score": 0,
+    "level": "INFO",
+    "color_code": "\u001b[94m",
+    "findings": [],
+    "cves": [],
+    "wp_version": null,
+    "plugin_count": 15,
+    "vulnerable_plugins": 0,
+    "php_version": null,
+    "timestamp": 1769338768.332994
+  }
+]

@@ -389,26 +389,56 @@ class PassiveDNSProducer(BaseProducer):
 class PreFilter:
     """Phase 1: Lọc nhanh, rẻ"""
     
-    def __init__(self, event_bus: AsyncEventBus):
+    def __init__(self, event_bus: AsyncEventBus, history_file: str = "scanned_history.txt"):
         self.event_bus = event_bus
         self.seen_domains = set()
         self.dns_resolver = aiodns.DNSResolver()
-        
+        self.history_file = history_file  # 🆕 THÊM 1 DÒNG
+        self._load_history()  # 🆕 THÊM 1 DÒNG
         # Đăng ký subscriber
         asyncio.create_task(self.event_bus.subscribe(
             EventType.RAW_DOMAIN, 
             self.process_raw_domain
         ))
     
+
+
+
+
+    def _load_history(self):
+            """Load domains đã scan từ file"""
+            if os.path.exists(self.history_file):
+                try:
+                    with open(self.history_file, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            domain = line.strip()
+                            if domain:
+                                self.seen_domains.add(domain)
+                    print(f"[PreFilter] ⏮️  Loaded {len(self.seen_domains)} scanned domains from history")
+                except Exception as e:
+                    print(f"[PreFilter] Warning: {e}")
+    
+    def _save_to_history(self, domain: str):
+        """Lưu domain vào file"""
+        try:
+            with open(self.history_file, 'a', encoding='utf-8') as f:
+                f.write(f"{domain}\n")
+        except:
+            pass  # Silent fail
+    
+
+
+
     async def process_raw_domain(self, event: Event):
         """Xử lý raw domain event"""
         domain = event.data.get('domain', '')
         
         # 1. Dedup toàn cục
         if domain in self.seen_domains:
+            print(f"[PreFilter] ⏭️  Skip (scanned): {domain}")
             return
         self.seen_domains.add(domain)
-        
+        self._save_to_history(domain)
         # 2. Normalize và validate
         normalized = self.normalize_domain(domain)
         if not normalized:
@@ -638,6 +668,26 @@ class WPGateDetector:
         
         return {'detected': False}
 
+
+
+
+    async def cleanup(self):
+        """Cleanup session"""
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+                print("[WPGateDetector] Session closed")
+            except Exception as e:
+                print(f"[WPGateDetector] Session close error: {e}")
+
+
+
+
+
+
+
+
+
 # =================== PHASE 3: WP CORE FINGERPRINT ===================
 class WPCoreFingerprint:
     """Phase 3: Lấy thông tin core WordPress"""
@@ -858,6 +908,22 @@ class WPCoreFingerprint:
             pass
         
         return False
+
+
+
+    async def cleanup(self):
+        """Cleanup session"""
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+                print("[WPCoreFingerprint] Session closed")
+            except Exception as e:
+                print(f"[WPCoreFingerprint] Session close error: {e}")
+
+
+
+
+
 
 # =================== PLUGIN VERSION RESOLVER ===================
 class VersionDetection:
@@ -1121,7 +1187,7 @@ class PluginVersionResolver:
         return None
     
     def _is_valid_version(self, version: str) -> bool:
-        """Validate version string"""
+        """Enhanced version validation"""
         if not version or len(version) > 15:
             return False
         
@@ -1132,18 +1198,30 @@ class PluginVersionResolver:
         
         # Check số phần hợp lý
         parts = version.split('.')
-        if len(parts) > 4:  # Tối đa 4 phần: major.minor.patch.build
+        if len(parts) > 4:  # Tối đa 4 phần
             return False
         
-        # Check mỗi phần là số
+        # Check mỗi phần là số và hợp lý
         try:
             for part in parts:
-                int(part)
+                num = int(part)
+                # 🆕 Mỗi phần không quá lớn
+                if num > 999:  # Version part không vượt 999
+                    return False
         except:
             return False
         
-        # Phiên bản hợp lý (không quá lớn)
-        if int(parts[0]) > 100:  # Unlikely major version > 100
+        # 🆕 Phiên bản hợp lý (không quá lớn)
+        if int(parts[0]) > 100:  # Major version unlikely > 100
+            return False
+        
+        # 🆕 Check version không phải là timestamp hoặc build number
+        # VD: 20231225 là invalid
+        if len(parts) == 1 and len(parts[0]) > 4:
+            return False
+        
+        # 🆕 Check version không phải là năm đơn thuần
+        if len(parts) == 1 and 1900 <= int(parts[0]) <= 2100:
             return False
         
         return True
@@ -1395,7 +1473,7 @@ class EnhancedAttackSurfaceEnumerator:
     def __init__(self, event_bus: AsyncEventBus):
         self.event_bus = event_bus
         self.session = None
-        
+        self.active_resolvers = []
         asyncio.create_task(self.event_bus.subscribe(
             EventType.WP_PROFILE,
             self.deep_enumeration
@@ -1422,6 +1500,9 @@ class EnhancedAttackSurfaceEnumerator:
         plugin_resolver = PluginVersionResolver(self.session, domain)
         theme_resolver = ThemeVersionResolver(self.session, domain)
         php_detector = PHPVersionDetector(self.session, domain)
+        
+        # 🆕 Track để cleanup sau
+        self.active_resolvers.extend([plugin_resolver, theme_resolver, php_detector])
         
         # Run all enumerations in parallel
         tasks = [
@@ -1518,27 +1599,47 @@ class EnhancedAttackSurfaceEnumerator:
         return plugins
     
     async def _detect_plugin_presence(self, domain: str) -> List[str]:
-        """Detect which plugins are present"""
+        """Detect which plugins are present with timeout protection"""
         detected = []
-        
-        # Check popular plugins
         popular_plugins = list(Config.POPULAR_PLUGINS.keys())
         
-        # Check in batches for efficiency
         batch_size = 10
+        max_total_time = 90  # 🆕 Max 90 giây cho toàn bộ plugin detection
+        start_time = time.time()
+        
         for i in range(0, len(popular_plugins), batch_size):
-            batch = popular_plugins[i:i+batch_size]
-            tasks = [self._check_single_plugin(domain, slug) for slug in batch]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # 🆕 Check overall timeout
+            elapsed = time.time() - start_time
+            if elapsed > max_total_time:
+                print(f"[PluginDetection] Overall timeout after {i} plugins ({elapsed:.1f}s)")
+                break
             
-            for j, result in enumerate(results):
-                if isinstance(result, bool) and result:
-                    detected.append(batch[j])
+            batch = popular_plugins[i:i+batch_size]
+            
+            try:
+                # 🆕 Timeout cho từng batch (10s)
+                tasks = [self._check_single_plugin(domain, slug) for slug in batch]
+                results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=10.0
+                )
+                
+                for j, result in enumerate(results):
+                    if isinstance(result, bool) and result:
+                        detected.append(batch[j])
+                        
+            except asyncio.TimeoutError:
+                print(f"[PluginDetection] Batch {i//batch_size + 1} timeout, skipping...")
+                continue
+            except Exception as e:
+                print(f"[PluginDetection] Batch {i//batch_size + 1} error: {e}")
+                continue
             
             # Small delay to avoid rate limiting
             await asyncio.sleep(0.1)
         
         return detected
+
     
     async def _check_single_plugin(self, domain: str, plugin_slug: str) -> bool:
         """Check if a specific plugin exists"""
@@ -1687,54 +1788,66 @@ class EnhancedAttackSurfaceEnumerator:
         return methods
     
     async def enumerate_users(self, domain):
+        """Enhanced user enumeration with better validation"""
         users = []
-
-        # 1️⃣ Thử REST API trước
+        
+        # 1️⃣ REST API (ưu tiên cao nhất)
         for scheme in ['https://', 'http://']:
             url = f"{scheme}{domain}/wp-json/wp/v2/users?per_page=20"
             try:
                 async with self.session.get(url, ssl=False, timeout=5) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        for u in data:
-                            # CHỈ nhận user nếu có slug rõ ràng
-                            if isinstance(u, dict) and 'slug' in u:
-                                users.append({
-                                    "id": u.get("id"),
-                                    "slug": u.get("slug"),
-                                    "name": u.get("name"),
-                                    "source": "wp-json"
-                                })
-            except:
+                        if isinstance(data, list):
+                            for u in data:
+                                if isinstance(u, dict) and 'slug' in u and u['slug']:
+                                    users.append({
+                                        "id": u.get("id"),
+                                        "slug": u.get("slug"),
+                                        "name": u.get("name"),
+                                        "source": "wp-json"
+                                    })
+                            if users:  # Nếu có users thật, return ngay
+                                return users
+            except Exception as e:
                 pass
-
-        # Nếu REST có user thật → return luôn
-        if users:
-            return users
-
-        # 2️⃣ Fallback: author scan (rất chặt)
-        for i in range(1, 6):
+        
+        # 2️⃣ Author enumeration (fallback với validation chặt)
+        seen_slugs = set()
+        for i in range(1, 11):  # Tăng lên 10 users
             for scheme in ['https://', 'http://']:
                 url = f"{scheme}{domain}/?author={i}"
                 try:
-                    async with self.session.get(url, allow_redirects=True, ssl=False, timeout=5) as resp:
+                    async with self.session.get(url, allow_redirects=True, 
+                                               ssl=False, timeout=5) as resp:
                         final_url = str(resp.url)
-
-                        # Chỉ accept nếu URL có /author/<slug>/
-                        m = re.search(r'/author/([^/]+)/?', final_url)
+                        
+                        # Validate redirect URL
+                        m = re.search(r'/author/([a-zA-Z0-9_-]+)/?', final_url)
                         if m:
-                            slug = m.group(1)
-
-                            # tránh slug rác
-                            if slug.lower() not in ['page', 'author', 'user']:
+                            slug = m.group(1).lower()
+                            
+                            # Blacklist false positives
+                            blacklist = ['page', 'author', 'user', 'admin', 
+                                       'login', 'wp-admin', 'feed', 'rss',
+                                       'comments', 'index', 'home']
+                            
+                            # Validate slug
+                            if (slug not in blacklist and 
+                                slug not in seen_slugs and 
+                                len(slug) >= 3 and  # Tối thiểu 3 ký tự
+                                not slug.isdigit()):  # Không phải toàn số
+                                
+                                seen_slugs.add(slug)
                                 users.append({
                                     "id": i,
                                     "slug": slug,
                                     "source": "author_redirect"
                                 })
+                                break  # Next user ID
                 except:
                     continue
-
+        
         return users
 
     
@@ -1764,19 +1877,38 @@ class EnhancedAttackSurfaceEnumerator:
         return False
     
     async def enumerate_rest_routes(self, domain: str) -> List[str]:
-        """Enumerate REST API routes"""
-        routes = []
-        for scheme in ['https://', 'http://']:
-            url = f"{scheme}{domain}/wp-json/"
+            """Enumerate REST API routes"""
+            routes = []
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/wp-json/"
+                try:
+                    async with self.session.get(url, timeout=5, ssl=False) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if 'routes' in data:
+                                routes = list(data['routes'].keys())[:10]
+                except:
+                    continue
+            return routes
+    
+    async def cleanup(self):
+        """Cleanup tất cả resolvers và sessions"""
+        print("[EnhancedAttackSurfaceEnumerator] Cleaning up resolvers...")
+        
+        for resolver in self.active_resolvers:
+            # Resolvers không có session riêng, chúng dùng shared session
+            # Nên không cần close session ở đây
+            pass
+        
+        self.active_resolvers.clear()
+        
+        # Close main session
+        if self.session and not self.session.closed:
             try:
-                async with self.session.get(url, timeout=5, ssl=False) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if 'routes' in data:
-                            routes = list(data['routes'].keys())[:10]
-            except:
-                continue
-        return routes
+                await self.session.close()
+                print("[EnhancedAttackSurfaceEnumerator] Session closed")
+            except Exception as e:
+                print(f"[EnhancedAttackSurfaceEnumerator] Session close error: {e}")
     
     def _calculate_initial_risk(self, surfaces: Dict) -> int:
         """Calculate initial risk score based on surfaces"""
@@ -2153,7 +2285,7 @@ class EnhancedWASEPipeline:
     """Enhanced pipeline với tất cả cải tiến"""
     
     def __init__(self, targets_file: Optional[str] = None, output_file: Optional[str] = None, 
-                 workers: int = 12, discovery: bool = True):
+                     workers: int = 12, discovery: bool = True, history_file: str = "scanned_history.txt"):  
         self.targets_file = targets_file
         self.output_file = output_file
         self.workers = workers
@@ -2166,8 +2298,9 @@ class EnhancedWASEPipeline:
         # Producers
         self.producers = []
         
-        # Enhanced processors
-        self.pre_filter = PreFilter(self.event_bus)
+
+
+        self.pre_filter = PreFilter(self.event_bus, history_file)
         self.wp_detector = WPGateDetector(self.event_bus, workers=workers)
         self.wp_fingerprint = WPCoreFingerprint(self.event_bus)
         self.surface_enumerator = EnhancedAttackSurfaceEnumerator(self.event_bus)
@@ -2283,79 +2416,91 @@ class EnhancedWASEPipeline:
             await asyncio.sleep(0.5)
         return True
     
+    
     async def _force_shutdown(self):
+        """Force shutdown với cleanup đầy đủ"""
         print("\n" + "!" * 80)
         print("🛑 FORCE SHUTDOWN - ĐANG DỪNG TẤT CẢ!")
         print("!" * 80)
 
         self.is_running = False
 
-        # 1. Dừng producers
+        # 1️⃣ Dừng producers
+        print("[Shutdown] Stopping producers...")
         for producer in self.producers:
             try:
                 await producer.stop()
             except Exception as e:
                 print(f"[Producer stop error] {producer.name}: {e}")
 
-        # 2. Dừng event bus (đã có sẵn trong code của bạn)
+        # 2️⃣ Dừng event bus
+        print("[Shutdown] Stopping event bus...")
         if hasattr(self.event_bus, 'stop'):
             try:
                 await self.event_bus.stop()
             except Exception as e:
                 print(f"[EventBus stop error] {e}")
 
-        # 3. Cancel tất cả các task còn lại
+        # 3️⃣ 🆕 Cleanup EnhancedAttackSurfaceEnumerator
+        print("[Shutdown] Cleaning up all components...")
+        
+        components_to_cleanup = [
+            ('WPGateDetector', self.wp_detector),
+            ('WPCoreFingerprint', self.wp_fingerprint),
+            ('EnhancedAttackSurfaceEnumerator', self.surface_enumerator),
+        ]
+        
+        for name, component in components_to_cleanup:
+            if hasattr(component, 'cleanup'):
+                try:
+                    await component.cleanup()
+                    print(f"[Cleanup] ✓ {name} cleaned up")
+                except Exception as e:
+                    print(f"[Cleanup error] {name}: {e}")
+
+        # 4️⃣ Cancel tất cả tasks còn lại
+        print("[Shutdown] Cancelling remaining tasks...")
         current_task = asyncio.current_task()
         all_tasks = [t for t in asyncio.all_tasks() if t is not current_task and not t.done()]
 
         if all_tasks:
-            print(f"[Shutdown] Đang cancel {len(all_tasks)} task còn lại...")
+            print(f"[Shutdown] Cancelling {len(all_tasks)} tasks...")
             for task in all_tasks:
                 task.cancel()
 
             try:
-                # Đợi tối đa 3 giây để các task phản ứng với cancel
-                await asyncio.wait(all_tasks, timeout=3.0, return_exceptions=True)
+                await asyncio.wait(all_tasks, timeout=3.0)
             except Exception as e:
                 print(f"[Task cancel error] {e}")
 
-        # 4. Cleanup TẤT CẢ aiohttp ClientSession (quan trọng nhất để hết Unclosed session)
+        # 5️⃣ Cleanup TẤT CẢ aiohttp ClientSession
+        print("[Shutdown] Closing all sessions...")
         sessions_to_close = []
 
-        # Thu thập từ các class đã khởi tạo session
+        # Thu thập sessions từ các components
         if hasattr(self, 'wp_detector') and hasattr(self.wp_detector, 'session') and self.wp_detector.session:
-            sessions_to_close.append(self.wp_detector.session)
+            sessions_to_close.append(('WPGateDetector', self.wp_detector.session))
+            
         if hasattr(self, 'wp_fingerprint') and hasattr(self.wp_fingerprint, 'session') and self.wp_fingerprint.session:
-            sessions_to_close.append(self.wp_fingerprint.session)
+            sessions_to_close.append(('WPCoreFingerprint', self.wp_fingerprint.session))
+            
         if hasattr(self, 'surface_enumerator') and hasattr(self.surface_enumerator, 'session') and self.surface_enumerator.session:
-            sessions_to_close.append(self.surface_enumerator.session)
+            sessions_to_close.append(('EnhancedAttackSurfaceEnumerator', self.surface_enumerator.session))
 
-        # Nếu bạn có thêm session ở nơi khác (ví dụ PluginVersionResolver, PHPVersionDetector)
-        # thì thêm vào đây, ví dụ:
-        # if 'plugin_resolver' in locals() and plugin_resolver.session: ...
-
-        for session in sessions_to_close:
+        # Close tất cả sessions
+        for name, session in sessions_to_close:
             try:
                 if not session.closed:
                     await session.close()
-                    print(f"[Cleanup] Đã đóng session: {session}")
+                    print(f"[Cleanup] ✓ Closed session: {name}")
             except Exception as e:
-                print(f"[Session close error] {e}")
+                print(f"[Session close error] {name}: {e}")
 
-        # 5. Force close connector nếu vẫn leak (hiếm nhưng có thể xảy ra)
-        try:
-            loop = asyncio.get_running_loop()
-            # Truy cập internal _connections (không khuyến khích nhưng hiệu quả khi leak nặng)
-            if hasattr(loop, '_connections'):
-                for transport, proto in loop._connections.values():
-                    try:
-                        transport.close()
-                    except:
-                        pass
-        except Exception:
-            pass  # Không quan trọng nếu không truy cập được
+        # 6️⃣ 🆕 Force wait để đảm bảo connectors đóng hoàn toàn
+        print("[Shutdown] Waiting for connectors to close...")
+        await asyncio.sleep(0.5)  # Cho connectors thời gian đóng
 
-        print("✅ ĐÃ SHUTDOWN HOÀN TOÀN - Cleanup sessions & connectors xong")
+        print("✅ SHUTDOWN HOÀN TẤT - All cleanup done")
 
 # =================== MAIN ===================
 async def main():
@@ -2371,7 +2516,8 @@ async def main():
         targets_file=args.targets,
         output_file=args.output,
         workers=args.workers,
-        discovery=not args.no_discovery
+        discovery=not args.no_discovery,
+        history_file=args.history 
     )
     
     # CHẠY VÀ THOÁT
@@ -2415,7 +2561,8 @@ Examples:
     
     parser.add_argument('--no-discovery', action='store_true',
                        help='Tắt discovery mode (chỉ dùng nếu có --targets)')
-    
+    parser.add_argument('--history', type=str, default='scanned_history.txt',  # 🆕 THÊM OPTION NÀY
+                   help='File lưu domains đã scan (default: scanned_history.txt)')
     return parser.parse_args()
 
 if __name__ == "__main__":
