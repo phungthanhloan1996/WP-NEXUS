@@ -2284,43 +2284,78 @@ class EnhancedWASEPipeline:
         return True
     
     async def _force_shutdown(self):
-        """Dừng mọi thứ"""
         print("\n" + "!" * 80)
-        print("🛑 FORCE SHUTDOWN - DỪNG TẤT CẢ!")
+        print("🛑 FORCE SHUTDOWN - ĐANG DỪNG TẤT CẢ!")
         print("!" * 80)
-        
-        # 1. Dừng tất cả producers
+
+        self.is_running = False
+
+        # 1. Dừng producers
         for producer in self.producers:
             try:
                 await producer.stop()
-            except:
-                pass
-        
-        # 2. Dừng event bus
+            except Exception as e:
+                print(f"[Producer stop error] {producer.name}: {e}")
+
+        # 2. Dừng event bus (đã có sẵn trong code của bạn)
         if hasattr(self.event_bus, 'stop'):
             try:
                 await self.event_bus.stop()
-            except:
-                pass
-        
-        # 3. Cancel ALL running tasks
-        tasks = [t for t in asyncio.all_tasks() 
-                if t is not asyncio.current_task()]
-        
-        for task in tasks:
-            task.cancel()
-        
-        # 4. Đợi cực ngắn rồi bỏ qua
-        if tasks:
+            except Exception as e:
+                print(f"[EventBus stop error] {e}")
+
+        # 3. Cancel tất cả các task còn lại
+        current_task = asyncio.current_task()
+        all_tasks = [t for t in asyncio.all_tasks() if t is not current_task and not t.done()]
+
+        if all_tasks:
+            print(f"[Shutdown] Đang cancel {len(all_tasks)} task còn lại...")
+            for task in all_tasks:
+                task.cancel()
+
             try:
-                await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=1.0
-                )
-            except:
-                pass
-        
-        print("✅ Đã shutdown hoàn toàn")
+                # Đợi tối đa 3 giây để các task phản ứng với cancel
+                await asyncio.wait(all_tasks, timeout=3.0, return_exceptions=True)
+            except Exception as e:
+                print(f"[Task cancel error] {e}")
+
+        # 4. Cleanup TẤT CẢ aiohttp ClientSession (quan trọng nhất để hết Unclosed session)
+        sessions_to_close = []
+
+        # Thu thập từ các class đã khởi tạo session
+        if hasattr(self, 'wp_detector') and hasattr(self.wp_detector, 'session') and self.wp_detector.session:
+            sessions_to_close.append(self.wp_detector.session)
+        if hasattr(self, 'wp_fingerprint') and hasattr(self.wp_fingerprint, 'session') and self.wp_fingerprint.session:
+            sessions_to_close.append(self.wp_fingerprint.session)
+        if hasattr(self, 'surface_enumerator') and hasattr(self.surface_enumerator, 'session') and self.surface_enumerator.session:
+            sessions_to_close.append(self.surface_enumerator.session)
+
+        # Nếu bạn có thêm session ở nơi khác (ví dụ PluginVersionResolver, PHPVersionDetector)
+        # thì thêm vào đây, ví dụ:
+        # if 'plugin_resolver' in locals() and plugin_resolver.session: ...
+
+        for session in sessions_to_close:
+            try:
+                if not session.closed:
+                    await session.close()
+                    print(f"[Cleanup] Đã đóng session: {session}")
+            except Exception as e:
+                print(f"[Session close error] {e}")
+
+        # 5. Force close connector nếu vẫn leak (hiếm nhưng có thể xảy ra)
+        try:
+            loop = asyncio.get_running_loop()
+            # Truy cập internal _connections (không khuyến khích nhưng hiệu quả khi leak nặng)
+            if hasattr(loop, '_connections'):
+                for transport, proto in loop._connections.values():
+                    try:
+                        transport.close()
+                    except:
+                        pass
+        except Exception:
+            pass  # Không quan trọng nếu không truy cập được
+
+        print("✅ ĐÃ SHUTDOWN HOÀN TOÀN - Cleanup sessions & connectors xong")
 
 # =================== MAIN ===================
 async def main():
@@ -2384,18 +2419,18 @@ Examples:
     return parser.parse_args()
 
 if __name__ == "__main__":
-    if sys.version_info < (3, 7):
-        print("❌ Python 3.7+ required")
-        sys.exit(1)
-    
-    # ĐƠN GIẢN: Chạy và thoát
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        asyncio.run(main())
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
-        print("\n\n🛑 Thoát khẩn cấp!")
-    except Exception as e:
-        print(f"\n💥 Lỗi nghiêm trọng: {e}")
-    
-    # ĐẢM BẢO THOÁT
-    print("\n✅ Script đã kết thúc hoàn toàn")
-    sys.exit(0)
+        print("\n🛑 KeyboardInterrupt - Cleaning up...")
+    finally:
+        # Cleanup loop
+        tasks = asyncio.all_tasks(loop)
+        for t in tasks:
+            t.cancel()
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.run_until_complete(loop.shutdown_default_executor())
+        loop.close()
+    print("Exit hoàn toàn")
