@@ -1560,7 +1560,7 @@ class EnhancedAttackSurfaceEnumerator:
         detected_slugs = await self._detect_plugin_presence(domain)
         
         # Resolve version for each plugin
-        for plugin_slug in detected_slugs[:15]:  # Limit to 15 for performance
+        for plugin_slug in detected_slugs[:30]:  # Limit to 15 for performance
             try:
                 version_result = await resolver.resolve(plugin_slug)
                 

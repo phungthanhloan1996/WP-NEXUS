@@ -151,7 +151,7 @@ class AsyncEventBus:
         self.subscribers = defaultdict(list)
         self.stats = {'processed': 0, 'dropped': 0}
         self.is_running = False
-        self.shutdown_event = asyncio.Event()
+        self.shutdown_event = asyncio.Event()  # Thêm shutdown event
     
     async def publish(self, event: Event):
         """Publish event vào bus"""
@@ -169,19 +169,21 @@ class AsyncEventBus:
     
     async def run(self):
         """Chạy event bus loop"""
-        print(f"📡 EventBus started")
+        print(f"[EventBus] Started")
         self.is_running = True
         
         while self.is_running and not self.shutdown_event.is_set():
             try:
+                # Sử dụng asyncio.wait để có thể bị interrupt
                 try:
                     event = await asyncio.wait_for(
                         self.queue.get(),
-                        timeout=0.5
+                        timeout=0.5  # Timeout ngắn
                     )
                 except asyncio.TimeoutError:
-                    continue
+                    continue  # Kiểm tra lại điều kiện dừng
                 
+                # Gọi tất cả subscribers cho event type này
                 if event.type in self.subscribers:
                     for callback in self.subscribers[event.type]:
                         asyncio.create_task(callback(event))
@@ -189,17 +191,20 @@ class AsyncEventBus:
                 self.queue.task_done()
                 
             except asyncio.CancelledError:
+                print("[EventBus] Cancelled!")
                 break
             except Exception as e:
-                pass
+                print(f"[EventBus] Error: {e}")
         
-        print("📡 EventBus stopped")
+        print("[EventBus] Stopped")
     
     async def stop(self):
         """Dừng event bus ngay lập tức"""
+        print("[EventBus] Force stopping...")
         self.is_running = False
         self.shutdown_event.set()
         
+        # Xóa tất cả items trong queue
         while not self.queue.empty():
             try:
                 self.queue.get_nowait()
@@ -238,6 +243,8 @@ class TargetFileProducer(BaseProducer):
     
     async def _produce_loop(self):
         """Đọc targets từ file và publish"""
+        print(f"[{self.name}] Reading targets from {self.targets_file}")
+        
         try:
             with open(self.targets_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
@@ -248,6 +255,7 @@ class TargetFileProducer(BaseProducer):
                 
                 domain = line.strip()
                 if domain and not domain.startswith('#'):
+                    # Tạo raw domain event
                     event = Event(
                         type=EventType.RAW_DOMAIN,
                         data={'domain': domain, 'raw': domain},
@@ -255,10 +263,13 @@ class TargetFileProducer(BaseProducer):
                     )
                     await self.event_bus.publish(event)
                 
+                # Small delay để không block event bus
                 await asyncio.sleep(0.01)
             
+            print(f"[{self.name}] Finished reading {len(lines)} targets")
+            
         except Exception as e:
-            pass
+            print(f"[{self.name}] Error: {e}")
 
 class DorkProducer(BaseProducer):
     """Producer từ DuckDuckGo dorks"""
@@ -269,6 +280,8 @@ class DorkProducer(BaseProducer):
     
     async def _produce_loop(self):
         """Thu thập domain từ dorks"""
+        print(f"[{self.name}] Starting dork-based discovery")
+        
         try:
             from ddgs import DDGS
             self.ddgs = DDGS()
@@ -276,6 +289,8 @@ class DorkProducer(BaseProducer):
             for dork in Config.DORKS:
                 if not self.is_running:
                     break
+                
+                print(f"[{self.name}] Processing dork: {dork[:50]}...")
                 
                 try:
                     results = self.ddgs.text(
@@ -292,12 +307,14 @@ class DorkProducer(BaseProducer):
                         
                         url = result.get('href', '') or result.get('url', '')
                         if url:
+                            # Extract domain
                             try:
                                 parsed = urlparse(url)
                                 domain = parsed.netloc.lower()
                                 if domain.startswith('www.'):
                                     domain = domain[4:]
                                 
+                                # Publish raw domain
                                 event = Event(
                                     type=EventType.RAW_DOMAIN,
                                     data={'domain': domain, 'raw': url, 'dork': dork},
@@ -308,17 +325,19 @@ class DorkProducer(BaseProducer):
                             except:
                                 pass
                         
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.1)  # Rate limiting
                     
+                    # Delay giữa các dorks
                     await asyncio.sleep(random.uniform(2, 4))
                     
-                except Exception:
+                except Exception as e:
+                    print(f"[{self.name}] Dork error: {e}")
                     await asyncio.sleep(5)
         
         except ImportError:
-            pass
-        except Exception:
-            pass
+            print(f"[{self.name}] DDGS not available, skipping dork discovery")
+        except Exception as e:
+            print(f"[{self.name}] Error: {e}")
 
 class PassiveDNSProducer(BaseProducer):
     """Producer từ passive DNS sources"""
@@ -329,6 +348,8 @@ class PassiveDNSProducer(BaseProducer):
     
     async def _produce_loop(self):
         """Thu thập từ passive DNS sources"""
+        print(f"[{self.name}] Starting passive DNS discovery")
+        
         async with aiohttp.ClientSession() as session:
             for source in Config.DISCOVERY_SOURCES:
                 if not self.is_running:
@@ -338,6 +359,7 @@ class PassiveDNSProducer(BaseProducer):
                     async with session.get(source, timeout=10) as resp:
                         if resp.status == 200:
                             text = await resp.text()
+                            # Extract domains .vn
                             domains = re.findall(
                                 r'([a-zA-Z0-9.-]+\.(?:vn|com\.vn|net\.vn|org\.vn|edu\.vn|gov\.vn))',
                                 text,
@@ -354,10 +376,12 @@ class PassiveDNSProducer(BaseProducer):
                                 )
                                 await self.event_bus.publish(event)
                                 
-                                await asyncio.sleep(0.01)
+                                await asyncio.sleep(0.01)  # Small delay
                     
-                except Exception:
-                    pass
+                    print(f"[{self.name}] Processed source: {source}")
+                    
+                except Exception as e:
+                    print(f"[{self.name}] Source error {source}: {e}")
                 
                 await asyncio.sleep(1)
 
@@ -369,24 +393,30 @@ class PreFilter:
         self.event_bus = event_bus
         self.seen_domains = set()
         self.dns_resolver = aiodns.DNSResolver()
-        self.history_file = history_file
-        self._load_history()
+        self.history_file = history_file  # 🆕 THÊM 1 DÒNG
+        self._load_history()  # 🆕 THÊM 1 DÒNG
+        # Đăng ký subscriber
         asyncio.create_task(self.event_bus.subscribe(
             EventType.RAW_DOMAIN, 
             self.process_raw_domain
         ))
     
+
+
+
+
     def _load_history(self):
-        """Load domains đã scan từ file"""
-        if os.path.exists(self.history_file):
-            try:
-                with open(self.history_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        domain = line.strip()
-                        if domain:
-                            self.seen_domains.add(domain)
-            except Exception:
-                pass
+            """Load domains đã scan từ file"""
+            if os.path.exists(self.history_file):
+                try:
+                    with open(self.history_file, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            domain = line.strip()
+                            if domain:
+                                self.seen_domains.add(domain)
+                    print(f"[PreFilter] ⏮️  Loaded {len(self.seen_domains)} scanned domains from history")
+                except Exception as e:
+                    print(f"[PreFilter] Warning: {e}")
     
     def _save_to_history(self, domain: str):
         """Lưu domain vào file"""
@@ -394,25 +424,32 @@ class PreFilter:
             with open(self.history_file, 'a', encoding='utf-8') as f:
                 f.write(f"{domain}\n")
         except:
-            pass
+            pass  # Silent fail
     
+
+
+
     async def process_raw_domain(self, event: Event):
         """Xử lý raw domain event"""
         domain = event.data.get('domain', '')
         
+        # 1. Dedup toàn cục
         if domain in self.seen_domains:
+            print(f"[PreFilter] ⏭️  Skip (scanned): {domain}")
             return
         self.seen_domains.add(domain)
         self._save_to_history(domain)
-        
+        # 2. Normalize và validate
         normalized = self.normalize_domain(domain)
         if not normalized:
             return
         
+        # 3. DNS resolve nhanh
         is_resolvable = await self.quick_dns_check(normalized)
         if not is_resolvable:
             return
         
+        # 4. Tạo clean domain event
         clean_event = Event(
             type=EventType.CLEAN_DOMAIN,
             data={
@@ -429,22 +466,28 @@ class PreFilter:
     def normalize_domain(self, domain: str) -> Optional[str]:
         """Normalize domain"""
         try:
+            # Loại bỏ protocol nếu có
             if '://' in domain:
                 parsed = urlparse(domain)
                 domain = parsed.netloc
             
+            # Loại bỏ www.
             domain = domain.lower().replace("www.", "")
             
+            # Loại bỏ port
             if ':' in domain:
                 domain = domain.split(':')[0]
             
+            # Validate format
             if not re.match(r'^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$', domain):
                 return None
             
+            # Filter CDN/API
             cdn_keywords = ['cdn', 'cloudfront', 'akamai', 'fastly', 'cloudflare']
             if any(kw in domain for kw in cdn_keywords):
                 return None
             
+            # Too many subdomains
             if domain.count('.') > 4:
                 return None
             
@@ -456,6 +499,7 @@ class PreFilter:
     async def quick_dns_check(self, domain: str) -> bool:
         """DNS resolve nhanh với timeout ngắn"""
         try:
+            # Try A record
             await asyncio.wait_for(
                 self.dns_resolver.query(domain, 'A'),
                 timeout=Config.DNS_TIMEOUT
@@ -473,6 +517,7 @@ class WPGateDetector:
         self.session = None
         self.semaphore = asyncio.Semaphore(workers)
         
+        # Đăng ký subscriber
         asyncio.create_task(self.event_bus.subscribe(
             EventType.CLEAN_DOMAIN,
             self.process_clean_domain
@@ -497,6 +542,7 @@ class WPGateDetector:
             if not self.session:
                 await self.init_session()
             
+            # Adaptive probing - thử các probe song song
             probes = [
                 self.probe_homepage(domain),
                 self.probe_wp_login(domain),
@@ -506,16 +552,18 @@ class WPGateDetector:
             
             results = await asyncio.gather(*probes, return_exceptions=True)
             
+            # Tính confidence score
             confidence = 0
             signals = []
             
             for i, result in enumerate(results):
                 if isinstance(result, dict) and result.get('detected'):
-                    confidence += 25
+                    confidence += 25  # Mỗi probe thành công +25%
                     signals.append(result.get('signal', f'probe_{i}'))
             
-            is_wp = confidence >= 50
+            is_wp = confidence >= 50  # Ngưỡng 50%
             
+            # Tạo event kết quả
             wp_event = Event(
                 type=EventType.WP_DETECTED,
                 data={
@@ -555,7 +603,7 @@ class WPGateDetector:
                             }
                 except:
                     continue
-        except Exception:
+        except Exception as e:
             pass
         
         return {'detected': False}
@@ -619,14 +667,26 @@ class WPGateDetector:
             pass
         
         return {'detected': False}
-    
+
+
+
+
     async def cleanup(self):
         """Cleanup session"""
         if self.session and not self.session.closed:
             try:
                 await self.session.close()
-            except Exception:
-                pass
+                print("[WPGateDetector] Session closed")
+            except Exception as e:
+                print(f"[WPGateDetector] Session close error: {e}")
+
+
+
+
+
+
+
+
 
 # =================== PHASE 3: WP CORE FINGERPRINT ===================
 class WPCoreFingerprint:
@@ -636,6 +696,7 @@ class WPCoreFingerprint:
         self.event_bus = event_bus
         self.session = None
         
+        # Chỉ subscribe đến WP sites
         asyncio.create_task(self.event_bus.subscribe(
             EventType.WP_DETECTED,
             self.process_wp_domain
@@ -653,13 +714,14 @@ class WPCoreFingerprint:
     async def process_wp_domain(self, event: Event):
         """Xử lý domain đã xác nhận là WordPress"""
         if not event.data['is_wp']:
-            return
+            return  # Bỏ qua non-WP
         
         domain = event.data['domain']
         
         if not self.session:
             await self.init_session()
         
+        # Thu thập thông tin song song
         tasks = [
             self.get_wp_version(domain),
             self.get_theme_info(domain),
@@ -670,6 +732,7 @@ class WPCoreFingerprint:
         
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
+        # Merge kết quả
         wp_profile = {
             'domain': domain,
             'confidence': event.data['confidence'],
@@ -681,6 +744,7 @@ class WPCoreFingerprint:
             'timestamp': time.time()
         }
         
+        # Publish profile event
         profile_event = Event(
             type=EventType.WP_PROFILE,
             data=wp_profile,
@@ -700,15 +764,25 @@ class WPCoreFingerprint:
                     if resp.status == 200:
                         html = await resp.text()
                         
+                        # Tổng hợp tất cả các patterns để tìm version
                         patterns = [
+                            # Meta generator tags
                             r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']WordPress\s+([\d.]+)["\']',
                             r'content=["\']WordPress\s+([\d.]+)["\'][^>]+name=["\']generator["\']',
                             r'generator=["\']WordPress\s+([\d.]+)["\']',
+                            
+                            # Script versions
                             r'(?:wp-embed|wp-emoji|wp-api)\.js\?ver=([\d.]+)',
                             r'src="[^"]+ver=([\d.]+)"[^>]*wp-embed',
+                            
+                            # RSS/Atom feeds trong HTML
                             r'<generator>https?://wordpress\.org/\?v=([\d.]+)</generator>',
                             r'generator="WordPress/([\d.]+)"',
+                            
+                            # Comments trong HTML
                             r'<!--[^>]*WordPress\s+([\d.]+)[^>]*-->',
+                            
+                            # Đơn giản hơn
                             r'WordPress\s+([\d.]+)',
                         ]
                         
@@ -716,17 +790,20 @@ class WPCoreFingerprint:
                             matches = re.findall(pattern, html, re.IGNORECASE)
                             version_candidates.extend(matches)
                         
-                        break
+                        break  # Break sau khi lấy được HTML
             except:
                 continue
         
+        # Xử lý các candidate versions
         if version_candidates:
+            # Lọc các version hợp lệ
             valid_versions = []
             for v in version_candidates:
                 if self._is_valid_version(v):
                     valid_versions.append(v)
             
             if valid_versions:
+                # Chọn version xuất hiện nhiều nhất
                 counter = Counter(valid_versions)
                 most_common = counter.most_common(1)[0]
                 return most_common[0]
@@ -738,21 +815,25 @@ class WPCoreFingerprint:
         if not version or len(version) > 10:
             return False
         
+        # Pattern: x.y.z hoặc x.y
         pattern = r'^\d+(?:\.\d+){1,2}$'
         if not re.match(pattern, version):
             return False
         
+        # Check số phần
         parts = version.split('.')
         if len(parts) > 3:
             return False
         
+        # Check mỗi phần là số
         try:
             for part in parts:
                 int(part)
         except:
             return False
         
-        if int(parts[0]) > 10:
+        # Phiên bản hợp lý (không quá lớn)
+        if int(parts[0]) > 10:  # WordPress chưa tới version 10
             return False
         
         return True
@@ -767,6 +848,7 @@ class WPCoreFingerprint:
                         if resp.status == 200:
                             html = await resp.text()
                             
+                            # Tìm theme slug
                             match = re.search(r'/wp-content/themes/([^/]+)/', html)
                             if match:
                                 theme_slug = match.group(1)
@@ -826,21 +908,29 @@ class WPCoreFingerprint:
             pass
         
         return False
-    
+
+
+
     async def cleanup(self):
         """Cleanup session"""
         if self.session and not self.session.closed:
             try:
                 await self.session.close()
-            except Exception:
-                pass
+                print("[WPCoreFingerprint] Session closed")
+            except Exception as e:
+                print(f"[WPCoreFingerprint] Session close error: {e}")
+
+
+
+
+
 
 # =================== PLUGIN VERSION RESOLVER ===================
 class VersionDetection:
     def __init__(self, version: Optional[str] = None, confidence: int = 0, 
                  method: str = "unknown", evidence: str = ""):
         self.version = version
-        self.confidence = confidence
+        self.confidence = confidence  # 0-100
         self.method = method
         self.evidence = evidence
     
@@ -858,16 +948,23 @@ class PluginVersionResolver:
         self.cache = {}
         self.html_cache = None
         
+        # Common file patterns for version detection
         self.VERSION_PATTERNS = [
+            # WordPress standard patterns
             r'\*\s*Version:\s*([\d\.]+)',
             r'@version\s+([\d\.]+)',
+            # PHP defines
             r"define\('.*VERSION',\s*['\"]([\d\.]+)['\"]",
             r'define\(".*VERSION",\s*["\']([\d\.]+)["\']',
+            # JSON/array
             r'"version"\s*:\s*"([\d\.]+)"',
             r"'version'\s*=>\s*'([\d\.]+)'",
+            # Variable assignment
             r'\$version\s*=\s*[\'"]([\d\.]+)[\'"]',
             r'Version\s*=\s*[\'"]([\d\.]+)[\'"]',
+            # Class constants
             r'const\s+VERSION\s*=\s*[\'"]([\d\.]+)[\'"]',
+            # Simple patterns
             r'v([\d\.]+)',
             r'version\s+([\d\.]+)',
             r'Version\s+([\d\.]+)',
@@ -879,6 +976,7 @@ class PluginVersionResolver:
         if plugin_slug in self.cache:
             return self.cache[plugin_slug]
         
+        # Run detection methods với priority
         methods = [
             (self._detect_via_readme, 85),
             (self._detect_via_plugin_header, 95),
@@ -894,11 +992,13 @@ class PluginVersionResolver:
                 if result.confidence > best_result.confidence:
                     best_result = result
                     
+                    # Nếu confidence cao, có thể dừng sớm
                     if best_result.confidence >= 90:
                         break
             except:
                 continue
         
+        # Cache result
         self.cache[plugin_slug] = best_result
         return best_result
     
@@ -937,6 +1037,7 @@ class PluginVersionResolver:
     async def _detect_via_plugin_header(self, plugin_slug: str) -> VersionDetection:
         """Detect version via plugin main file header"""
         
+        # Tạo danh sách các file có thể là main file
         slug_variants = [
             plugin_slug,
             plugin_slug.replace('-', '_'),
@@ -965,6 +1066,7 @@ class PluginVersionResolver:
                         if resp.status == 200:
                             content = await resp.text(encoding='utf-8', errors='ignore')
                             
+                            # Tìm trong 100 dòng đầu (header area)
                             lines = content.split('\n')[:100]
                             header_text = '\n'.join(lines)
                             
@@ -977,6 +1079,7 @@ class PluginVersionResolver:
                                     evidence=f"Found in {main_file} header"
                                 )
                             
+                            # Nếu không tìm thấy trong header, tìm trong toàn bộ content
                             version = self._extract_version_from_text(content)
                             if version:
                                 return VersionDetection(
@@ -996,10 +1099,12 @@ class PluginVersionResolver:
         if not html:
             return VersionDetection()
         
+        # Tìm tất cả assets từ plugin này
         asset_pattern = rf'/wp-content/plugins/{re.escape(plugin_slug)}/[^\s"\'>]+\.(?:js|css)\?ver=([\d\.]+)'
         matches = re.findall(asset_pattern, html, re.IGNORECASE)
         
         if matches:
+            # Sử dụng version phổ biến nhất
             version_counts = Counter(matches)
             most_common_version, count = version_counts.most_common(1)[0]
             
@@ -1029,6 +1134,7 @@ class PluginVersionResolver:
                         if resp.status == 200:
                             content = await resp.text(encoding='utf-8', errors='ignore')
                             
+                            # Tìm version mới nhất
                             patterns = [
                                 r'^(\d+\.\d+(?:\.\d+)?)\s',
                                 r'Version\s+(\d+\.\d+(?:\.\d+)?)',
@@ -1085,28 +1191,36 @@ class PluginVersionResolver:
         if not version or len(version) > 15:
             return False
         
+        # Pattern: x.y.z hoặc x.y
         pattern = r'^\d+(?:\.\d+)*$'
         if not re.match(pattern, version):
             return False
         
+        # Check số phần hợp lý
         parts = version.split('.')
-        if len(parts) > 4:
+        if len(parts) > 4:  # Tối đa 4 phần
             return False
         
+        # Check mỗi phần là số và hợp lý
         try:
             for part in parts:
                 num = int(part)
-                if num > 999:
+                # 🆕 Mỗi phần không quá lớn
+                if num > 999:  # Version part không vượt 999
                     return False
         except:
             return False
         
-        if int(parts[0]) > 100:
+        # 🆕 Phiên bản hợp lý (không quá lớn)
+        if int(parts[0]) > 100:  # Major version unlikely > 100
             return False
         
+        # 🆕 Check version không phải là timestamp hoặc build number
+        # VD: 20231225 là invalid
         if len(parts) == 1 and len(parts[0]) > 4:
             return False
         
+        # 🆕 Check version không phải là năm đơn thuần
         if len(parts) == 1 and 1900 <= int(parts[0]) <= 2100:
             return False
         
@@ -1123,6 +1237,7 @@ class ThemeVersionResolver:
     async def resolve(self, theme_slug: str) -> VersionDetection:
         """Resolve theme version"""
         
+        # Thử style.css trước (WordPress standard)
         for scheme in ['https://', 'http://']:
             url = f"{scheme}{self.domain}/wp-content/themes/{theme_slug}/style.css"
             try:
@@ -1130,6 +1245,7 @@ class ThemeVersionResolver:
                     if resp.status == 200:
                         content = await resp.text(encoding='utf-8', errors='ignore')
                         
+                        # Parse WordPress theme header
                         patterns = [
                             r'Version:\s*([\d\.]+)',
                             r'Theme Version:\s*([\d\.]+)',
@@ -1171,6 +1287,7 @@ class PHPVersionDetector:
     async def detect(self) -> Dict:
         """Detect PHP version using priority-based methods"""
         
+        # Thử các methods theo priority
         detection_methods = [
             (self._detect_from_phpinfo, 95, "phpinfo_leak"),
             (self._detect_from_headers, 80, "x-powered-by-header"),
@@ -1196,11 +1313,13 @@ class PHPVersionDetector:
                         best_result['confidence'] = confidence
                         best_result['method'] = method_name
                     
+                    # Nếu confidence cao, có thể dừng sớm
                     if confidence >= 90:
                         break
             except:
                 continue
         
+        # Check vulnerabilities nếu tìm thấy version
         if best_result['version'] and best_result['confidence'] > 50:
             best_result['vulnerabilities'] = self._check_php_vulnerabilities(best_result['version'])
         else:
@@ -1226,6 +1345,7 @@ class PHPVersionDetector:
                         if resp.status == 200:
                             text = await resp.text(encoding='utf-8', errors='ignore')
                             if 'phpinfo' in text.lower() or 'PHP Version' in text:
+                                # Extract PHP version
                                 match = re.search(r'PHP Version\s*<[^>]+>([\d\.]+)', text)
                                 if match:
                                     return match.group(1)
@@ -1241,6 +1361,7 @@ class PHPVersionDetector:
                 async with self.session.head(url, timeout=5, ssl=False) as resp:
                     powered_by = resp.headers.get('X-Powered-By', '')
                     if 'PHP' in powered_by:
+                        # Extract version: PHP/7.4.33 → 7.4.33
                         match = re.search(r'PHP/([\d\.]+)', powered_by)
                         if match:
                             return match.group(1)
@@ -1264,6 +1385,7 @@ class PHPVersionDetector:
                         if resp.status == 500:
                             text = await resp.text(encoding='utf-8', errors='ignore')
                             
+                            # Look for PHP version in error
                             patterns = [
                                 r'PHP/([\d\.]+)',
                                 r'PHP\s+([\d\.]+)',
@@ -1280,12 +1402,14 @@ class PHPVersionDetector:
     
     async def _detect_from_fingerprints(self) -> Optional[str]:
         """Detect PHP version via fingerprinting"""
+        # Kiểm tra các phiên bản PHP phổ biến
         common_versions = ['7.4', '8.0', '8.1', '8.2', '8.3']
         
         for version in common_versions:
             for scheme in ['https://', 'http://']:
                 url = f"{scheme}{self.domain}/index.php"
                 try:
+                    # Gửi request với header đặc biệt
                     headers = {'X-Forwarded-For': f'127.0.0.{random.randint(1, 255)}'}
                     async with self.session.get(url, headers=headers, timeout=3, ssl=False) as resp:
                         if 'PHP' in resp.headers.get('X-Powered-By', ''):
@@ -1300,6 +1424,7 @@ class PHPVersionDetector:
         """Check for known PHP vulnerabilities"""
         vulnerabilities = []
         
+        # Extract major.minor
         match = re.match(r'(\d+\.\d+)', version)
         if not match:
             return vulnerabilities
@@ -1371,12 +1496,15 @@ class EnhancedAttackSurfaceEnumerator:
         if not self.session:
             await self.init_session()
         
+        # Initialize detectors
         plugin_resolver = PluginVersionResolver(self.session, domain)
         theme_resolver = ThemeVersionResolver(self.session, domain)
         php_detector = PHPVersionDetector(self.session, domain)
         
+        # 🆕 Track để cleanup sau
         self.active_resolvers.extend([plugin_resolver, theme_resolver, php_detector])
         
+        # Run all enumerations in parallel
         tasks = [
             self.deep_plugin_enumeration(domain, plugin_resolver),
             self.deep_theme_enumeration(domain, theme_resolver),
@@ -1392,6 +1520,7 @@ class EnhancedAttackSurfaceEnumerator:
         
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
+        # Compile results
         surfaces = {
             'domain': domain,
             'plugins': results[0] if not isinstance(results[0], Exception) else [],
@@ -1411,8 +1540,10 @@ class EnhancedAttackSurfaceEnumerator:
             'timestamp': time.time()
         }
         
+        # Calculate initial risk based on findings
         surfaces['initial_risk_score'] = self._calculate_initial_risk(surfaces)
         
+        # Publish surface result
         surface_event = Event(
             type=EventType.SURFACE_RESULT,
             data=surfaces,
@@ -1425,14 +1556,18 @@ class EnhancedAttackSurfaceEnumerator:
         """Deep plugin enumeration with version detection"""
         plugins = []
         
+        # Detect plugin presence
         detected_slugs = await self._detect_plugin_presence(domain)
         
-        for plugin_slug in detected_slugs[:15]:
+        # Resolve version for each plugin
+        for plugin_slug in detected_slugs[:30]:  # Limit to 15 for performance
             try:
                 version_result = await resolver.resolve(plugin_slug)
                 
+                # Get plugin info từ database
                 plugin_info = Config.POPULAR_PLUGINS.get(plugin_slug, {})
                 
+                # Build plugin data
                 plugin_data = {
                     'slug': plugin_slug,
                     'name': plugin_info.get('name', plugin_slug),
@@ -1441,7 +1576,7 @@ class EnhancedAttackSurfaceEnumerator:
                     'version': version_result.version,
                     'version_confidence': version_result.confidence,
                     'version_method': version_result.method,
-                    'vulnerabilities': [],
+                    'vulnerabilities': [],  # Có thể thêm sau
                     'vulnerability_count': 0,
                     'risk_level': 'LOW',
                     'detected': True,
@@ -1450,7 +1585,15 @@ class EnhancedAttackSurfaceEnumerator:
                 
                 plugins.append(plugin_data)
                 
-            except Exception:
+                # Log detection
+                if version_result.version:
+                    print(f"\r\033[K\033[92m✓ Plugin\033[0m {plugin_slug:<25} v{version_result.version} "
+                          f"(confidence: {version_result.confidence}%)")
+                else:
+                    print(f"\r\033[K\033[93m? Plugin\033[0m {plugin_slug:<25} (no version)")
+                    
+            except Exception as e:
+                print(f"\r\033[K\033[91m✗ Plugin error\033[0m {plugin_slug}: {str(e)[:30]}")
                 continue
         
         return plugins
@@ -1461,17 +1604,20 @@ class EnhancedAttackSurfaceEnumerator:
         popular_plugins = list(Config.POPULAR_PLUGINS.keys())
         
         batch_size = 10
-        max_total_time = 90
+        max_total_time = 90  # 🆕 Max 90 giây cho toàn bộ plugin detection
         start_time = time.time()
         
         for i in range(0, len(popular_plugins), batch_size):
+            # 🆕 Check overall timeout
             elapsed = time.time() - start_time
             if elapsed > max_total_time:
+                print(f"[PluginDetection] Overall timeout after {i} plugins ({elapsed:.1f}s)")
                 break
             
             batch = popular_plugins[i:i+batch_size]
             
             try:
+                # 🆕 Timeout cho từng batch (10s)
                 tasks = [self._check_single_plugin(domain, slug) for slug in batch]
                 results = await asyncio.wait_for(
                     asyncio.gather(*tasks, return_exceptions=True),
@@ -1483,13 +1629,17 @@ class EnhancedAttackSurfaceEnumerator:
                         detected.append(batch[j])
                         
             except asyncio.TimeoutError:
+                print(f"[PluginDetection] Batch {i//batch_size + 1} timeout, skipping...")
                 continue
-            except Exception:
+            except Exception as e:
+                print(f"[PluginDetection] Batch {i//batch_size + 1} error: {e}")
                 continue
             
+            # Small delay to avoid rate limiting
             await asyncio.sleep(0.1)
         
         return detected
+
     
     async def _check_single_plugin(self, domain: str, plugin_slug: str) -> bool:
         """Check if a specific plugin exists"""
@@ -1502,6 +1652,7 @@ class EnhancedAttackSurfaceEnumerator:
             except:
                 continue
         
+        # Also check for readme.txt
         for scheme in ['https://', 'http://']:
             url = f"{scheme}{domain}/wp-content/plugins/{plugin_slug}/readme.txt"
             try:
@@ -1517,6 +1668,7 @@ class EnhancedAttackSurfaceEnumerator:
         """Deep theme enumeration"""
         themes = []
         
+        # Detect active theme
         active_theme = await self._detect_active_theme(domain)
         if active_theme:
             version_result = await resolver.resolve(active_theme)
@@ -1543,6 +1695,7 @@ class EnhancedAttackSurfaceEnumerator:
                     if resp.status == 200:
                         html = await resp.text(encoding='utf-8', errors='ignore')
                         
+                        # Look for theme in HTML
                         patterns = [
                             r'/wp-content/themes/([^/]+)/',
                             r'theme_name["\']\s*:\s*["\']([^"\']+)["\']',
@@ -1570,6 +1723,7 @@ class EnhancedAttackSurfaceEnumerator:
             except:
                 continue
         
+        # Also check wp-config-sample.php
         for scheme in ['https://', 'http://']:
             url = f"{scheme}{domain}/wp-config-sample.php"
             try:
@@ -1637,6 +1791,7 @@ class EnhancedAttackSurfaceEnumerator:
         """Enhanced user enumeration with better validation"""
         users = []
         
+        # 1️⃣ REST API (ưu tiên cao nhất)
         for scheme in ['https://', 'http://']:
             url = f"{scheme}{domain}/wp-json/wp/v2/users?per_page=20"
             try:
@@ -1652,13 +1807,14 @@ class EnhancedAttackSurfaceEnumerator:
                                         "name": u.get("name"),
                                         "source": "wp-json"
                                     })
-                            if users:
+                            if users:  # Nếu có users thật, return ngay
                                 return users
-            except Exception:
+            except Exception as e:
                 pass
         
+        # 2️⃣ Author enumeration (fallback với validation chặt)
         seen_slugs = set()
-        for i in range(1, 11):
+        for i in range(1, 11):  # Tăng lên 10 users
             for scheme in ['https://', 'http://']:
                 url = f"{scheme}{domain}/?author={i}"
                 try:
@@ -1666,18 +1822,21 @@ class EnhancedAttackSurfaceEnumerator:
                                                ssl=False, timeout=5) as resp:
                         final_url = str(resp.url)
                         
+                        # Validate redirect URL
                         m = re.search(r'/author/([a-zA-Z0-9_-]+)/?', final_url)
                         if m:
                             slug = m.group(1).lower()
                             
+                            # Blacklist false positives
                             blacklist = ['page', 'author', 'user', 'admin', 
                                        'login', 'wp-admin', 'feed', 'rss',
                                        'comments', 'index', 'home']
                             
+                            # Validate slug
                             if (slug not in blacklist and 
                                 slug not in seen_slugs and 
-                                len(slug) >= 3 and
-                                not slug.isdigit()):
+                                len(slug) >= 3 and  # Tối thiểu 3 ký tự
+                                not slug.isdigit()):  # Không phải toàn số
                                 
                                 seen_slugs.add(slug)
                                 users.append({
@@ -1685,11 +1844,12 @@ class EnhancedAttackSurfaceEnumerator:
                                     "slug": slug,
                                     "source": "author_redirect"
                                 })
-                                break
+                                break  # Next user ID
                 except:
                     continue
         
         return users
+
     
     async def check_uploads(self, domain: str) -> bool:
         """Check uploads directory listing"""
@@ -1717,59 +1877,73 @@ class EnhancedAttackSurfaceEnumerator:
         return False
     
     async def enumerate_rest_routes(self, domain: str) -> List[str]:
-        """Enumerate REST API routes"""
-        routes = []
-        for scheme in ['https://', 'http://']:
-            url = f"{scheme}{domain}/wp-json/"
-            try:
-                async with self.session.get(url, timeout=5, ssl=False) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if 'routes' in data:
-                            routes = list(data['routes'].keys())[:10]
-            except:
-                continue
-        return routes
+            """Enumerate REST API routes"""
+            routes = []
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{domain}/wp-json/"
+                try:
+                    async with self.session.get(url, timeout=5, ssl=False) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if 'routes' in data:
+                                routes = list(data['routes'].keys())[:10]
+                except:
+                    continue
+            return routes
     
     async def cleanup(self):
         """Cleanup tất cả resolvers và sessions"""
+        print("[EnhancedAttackSurfaceEnumerator] Cleaning up resolvers...")
+        
         for resolver in self.active_resolvers:
+            # Resolvers không có session riêng, chúng dùng shared session
+            # Nên không cần close session ở đây
             pass
         
         self.active_resolvers.clear()
         
+        # Close main session
         if self.session and not self.session.closed:
             try:
                 await self.session.close()
-            except Exception:
-                pass
+                print("[EnhancedAttackSurfaceEnumerator] Session closed")
+            except Exception as e:
+                print(f"[EnhancedAttackSurfaceEnumerator] Session close error: {e}")
     
     def _calculate_initial_risk(self, surfaces: Dict) -> int:
         """Calculate initial risk score based on surfaces"""
         score = 0
         
+        # Plugins with vulnerabilities
         for plugin in surfaces.get('plugins', []):
             vuln_count = plugin.get('vulnerability_count', 0)
             score += vuln_count * 25
         
+        # Exposed config files
         if surfaces.get('wp_config_exposed'):
             score += 40
         
+        # Directory listings
         if surfaces.get('uploads_listing'):
             score += 30
         
+        # Debug log exposed
         if surfaces.get('debug_log'):
             score += 25
         
+        # PHP vulnerabilities
         if surfaces['php_info'].get('vulnerabilities'):
             score += len(surfaces['php_info']['vulnerabilities']) * 20
         
+        # XML-RPC enabled with methods
         if surfaces.get('xmlrpc') and surfaces.get('xmlrpc_methods'):
             score += 20
         
+        # Many REST routes
         if len(surfaces.get('rest_routes', [])) > 10:
             score += 15
         
+        # Backup files found
         if surfaces.get('backup_files'):
             score += len(surfaces['backup_files']) * 10
         
@@ -1792,10 +1966,12 @@ class EnhancedRiskScorer:
         surfaces = event.data
         domain = surfaces['domain']
         
+        # Collect all findings
         findings = []
         cve_matches = []
         risk_score = surfaces.get('initial_risk_score', 0)
         
+        # 1. WordPress Core CVEs
         wp_version = surfaces.get('wp_version')
         if wp_version:
             wp_cves = self._check_wordpress_cves(wp_version)
@@ -1804,6 +1980,7 @@ class EnhancedRiskScorer:
                 cve_matches.extend(wp_cves)
                 findings.append(f"WordPress {wp_version}: {len(wp_cves)} CVEs")
         
+        # 2. Plugin vulnerabilities
         for plugin in surfaces.get('plugins', []):
             vulns = plugin.get('vulnerabilities', [])
             if vulns:
@@ -1812,6 +1989,7 @@ class EnhancedRiskScorer:
                 findings.append(f"{plugin_name} {plugin_version}: {len(vulns)} vulns")
                 cve_matches.extend(vulns)
         
+        # 3. PHP vulnerabilities
         php_info = surfaces.get('php_info', {})
         if php_info.get('vulnerabilities'):
             php_version = php_info.get('version', 'unknown')
@@ -1820,6 +1998,7 @@ class EnhancedRiskScorer:
             cve_matches.extend(vulns)
             findings.append(f"PHP {php_version}: {len(vulns)} CVEs")
         
+        # 4. Security misconfigurations
         if surfaces.get('wp_config_exposed'):
             findings.append("wp-config.php exposed")
             risk_score += 40
@@ -1832,7 +2011,10 @@ class EnhancedRiskScorer:
             findings.append("debug.log accessible")
             risk_score += 25
         
+        # 5. User enumeration
         users = surfaces.get('users', [])
+
+        # chỉ tính nếu user có slug thật
         real_users = [u for u in users if u.get("slug")]
 
         if len(real_users) > 0:
@@ -1840,24 +2022,30 @@ class EnhancedRiskScorer:
                 f"User enumeration confirmed ({len(real_users)} real users)"
             )
             risk_score += min(len(real_users) * 5, 20)
+
         
+        # 6. XML-RPC attack surface
         if surfaces.get('xmlrpc') and surfaces.get('xmlrpc_methods'):
             method_count = len(surfaces['xmlrpc_methods'])
             findings.append(f"XML-RPC enabled with {method_count} methods")
             risk_score += 20
         
+        # 7. REST API exposure
         rest_routes = surfaces.get('rest_routes', [])
         if len(rest_routes) > 10:
             findings.append(f"Many REST API routes exposed ({len(rest_routes)})")
             risk_score += 15
         
+        # 8. Backup files
         backup_files = surfaces.get('backup_files', [])
         if backup_files:
             findings.append(f"Backup files found: {len(backup_files)}")
             risk_score += len(backup_files) * 10
         
+        # Cap score
         risk_score = min(risk_score, 100)
         
+        # Determine risk level
         if risk_score >= 80:
             risk_level = "CRITICAL"
             color_code = "\033[91m"
@@ -1874,6 +2062,7 @@ class EnhancedRiskScorer:
             risk_level = "INFO"
             color_code = "\033[94m"
         
+        # Remove duplicates
         unique_findings = []
         seen = set()
         for finding in findings:
@@ -1881,6 +2070,7 @@ class EnhancedRiskScorer:
                 unique_findings.append(finding)
                 seen.add(finding)
         
+        # Create risk event
         risk_event = Event(
             type=EventType.RISK_SCORE,
             data={
@@ -1907,11 +2097,13 @@ class EnhancedRiskScorer:
         cves = []
         
         try:
+            # Check each version range
             for version_range, cve_list in Config.WORDPRESS_CVES.items():
                 if self._is_version_in_range(version, version_range):
                     if isinstance(cve_list, list):
                         cves.extend(cve_list)
                     elif isinstance(cve_list, dict):
+                        # Check sub-ranges
                         for sub_range, sub_cves in cve_list.items():
                             if self._is_version_in_range(version, sub_range):
                                 cves.extend(sub_cves)
@@ -1949,156 +2141,13 @@ class EnhancedRiskScorer:
         except:
             return 0
 
-# =================== CLEAN TERMINAL DISPLAY ===================
-class CleanTerminalDisplay:
-    """Hiển thị gọn gàng với status bar và result panel"""
-    
-    def __init__(self):
-        self.spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        self.spinner_index = 0
-        self.stats = {
-            'total': 0,
-            'wp_detected': 0,
-            'wp_not_detected': 0,
-            'critical': 0,
-            'high': 0,
-            'medium': 0,
-            'low': 0,
-            'info': 0,
-            'current_domain': '',
-            'current_phase': 'Initializing'
-        }
-        self.start_time = time.time()
-        self.last_update = 0
-        self.result_lines = []
-        self.max_result_lines = 10
-        
-        # Clear screen và setup
-        self.clear_screen()
-        self.show_header()
-        self.show_status_bar()
-    
-    def clear_screen(self):
-        """Xóa màn hình và di chuyển cursor lên đầu"""
-        print("\033[2J\033[H", end="", flush=True)
-    
-    def show_header(self):
-        """Hiển thị header"""
-        header = """
-╔════════════════════════════════════════════════════════════════════════╗
-║         WORDPRESS ATTACK SURFACE ENGINE (WASE) v1.5                   ║
-║                 Clean Terminal Display                                 ║
-╚════════════════════════════════════════════════════════════════════════╝
-        """
-        print(header)
-        print()
-    
-    def show_status_bar(self):
-        """Hiển thị status bar ở cuối màn hình"""
-        elapsed = time.time() - self.start_time
-        elapsed_str = f"{elapsed:.1f}s" if elapsed < 60 else f"{elapsed/60:.1f}m"
-        
-        wp_percent = (self.stats['wp_detected'] / max(1, self.stats['total'])) * 100
-        
-        status_line = f"📊 Stats: Total={self.stats['total']} | WP={self.stats['wp_detected']} ({wp_percent:.0f}%) | "
-        status_line += f"CRIT={self.stats['critical']} | HIGH={self.stats['high']} | "
-        status_line += f"Time={elapsed_str} | "
-        
-        spinner = self.spinner_chars[self.spinner_index]
-        self.spinner_index = (self.spinner_index + 1) % len(self.spinner_chars)
-        
-        status_line += f"Status: {spinner} {self.stats['current_phase']} | "
-        
-        domain_display = self.stats['current_domain'][:30] + "..." if len(self.stats['current_domain']) > 30 else self.stats['current_domain']
-        status_line += f"Domain: {domain_display}"
-        
-        # Di chuyển cursor xuống dòng status bar (dòng 30 từ trên xuống)
-        print(f"\033[30;1H\033[K{status_line}\033[0m", end="", flush=True)
-    
-    def update_domain(self, domain: str, phase: str):
-        """Cập nhật domain đang xử lý"""
-        self.stats['current_domain'] = domain[:50]
-        self.stats['current_phase'] = phase
-        
-        current_time = time.time()
-        if current_time - self.last_update > 0.5:  # Update mỗi 0.5s
-            self.last_update = current_time
-            self.show_status_bar()
-    
-    def increment_stat(self, key):
-        """Tăng statistic"""
-        if key in self.stats:
-            self.stats[key] += 1
-            self.show_status_bar()
-    
-    def show_result(self, domain: str, level: str, score: int, wp_version: str = "", cve_count: int = 0):
-        """Hiển thị kết quả mới"""
-        # Xác định icon và màu
-        if level == "CRITICAL":
-            icon = "🔥"
-            color = "\033[91m"
-        elif level == "HIGH":
-            icon = "⚠️ "
-            color = "\033[93m"
-        elif level == "MEDIUM":
-            icon = "📊"
-            color = "\033[33m"
-        elif level == "LOW":
-            icon = "✓"
-            color = "\033[92m"
-        else:
-            icon = "ℹ️ "
-            color = "\033[94m"
-        
-        reset = "\033[0m"
-        
-        # Tạo dòng kết quả
-        domain_display = domain[:35]
-        wp_info = f"WP {wp_version}" if wp_version else "No WP"
-        
-        result_line = f"{color}{icon} {domain_display:<37} "
-        result_line += f"Score: {score:3d}/100 [{level:<8}] {wp_info:<10}"
-        
-        if cve_count > 0:
-            result_line += f" CVEs: {cve_count}"
-        
-        result_line += reset
-        
-        # Thêm vào danh sách kết quả
-        self.result_lines.append(result_line)
-        
-        # Giới hạn số dòng hiển thị
-        if len(self.result_lines) > self.max_result_lines:
-            self.result_lines = self.result_lines[-self.max_result_lines:]
-        
-        # Hiển thị panel kết quả
-        self.show_results_panel()
-    
-    def show_results_panel(self):
-        """Hiển thị panel kết quả"""
-        # Clear khu vực panel (dòng 5-25)
-        for i in range(5, 25):
-            print(f"\033[{i};1H\033[K", end="")
-        
-        # Hiển thị tiêu đề panel
-        print("\033[5;1H\033[1m📈 RECENT RESULTS:\033[0m")
-        print("\033[6;1H" + "─" * 80)
-        
-        # Hiển thị các kết quả
-        for i, line in enumerate(self.result_lines[-10:], 1):
-            print(f"\033[{6+i};1H{line}")
-        
-        # Update status bar
-        self.show_status_bar()
-
 # =================== ENHANCED OUTPUT MANAGER ===================
 class EnhancedOutputManager:
-    """Enhanced output với terminal display gọn gàng"""
+    """Enhanced output with detailed plugin/theme info"""
     
     def __init__(self, event_bus: AsyncEventBus, output_file: Optional[str] = None):
         self.event_bus = event_bus
         self.output_file = output_file
-        self.display = CleanTerminalDisplay()
         self.results = []
         self.stats = {
             'total': 0,
@@ -2122,70 +2171,73 @@ class EnhancedOutputManager:
             EventType.WP_DETECTED,
             self.log_wp_detection
         ))
-        
-        asyncio.create_task(self.event_bus.subscribe(
-            EventType.CLEAN_DOMAIN,
-            self.log_new_domain
-        ))
-    
-    async def log_new_domain(self, event: Event):
-        """Log khi có domain mới bắt đầu scan"""
-        domain = event.data.get('domain', '')
-        self.display.update_domain(domain, "Pre-filter")
-        self.display.increment_stat('total')
-        self.stats['total'] += 1
-    
-    async def log_wp_detection(self, event: Event):
-        """Log WP detection"""
-        data = event.data
-        domain = data.get('domain', '')
-        
-        if data['is_wp']:
-            self.display.update_domain(domain, "WP Detected")
-            self.display.increment_stat('wp_detected')
-            self.stats['wp'] += 1
-        else:
-            self.display.update_domain(domain, "Non-WP")
-            self.display.increment_stat('wp_not_detected')
     
     async def handle_final_result(self, event: Event):
-        """Handle final result với display gọn gàng"""
+        """
+        Final result display (compact).
+        Only print when risk is HIGH or CRITICAL.
+        """
         result = event.data
-        domain = result['domain']
-        
-        self.display.update_domain(domain, "Risk Assessment")
-        
-        level = result['level']
-        if level == "CRITICAL":
-            self.stats['critical'] += 1
-            self.display.increment_stat('critical')
-        elif level == "HIGH":
-            self.stats['high'] += 1
-            self.display.increment_stat('high')
-        elif level == "MEDIUM":
-            self.stats['medium'] += 1
-            self.display.increment_stat('medium')
-        elif level == "LOW":
-            self.stats['low'] += 1
-            self.display.increment_stat('low')
-        else:
-            self.stats['info'] += 1
-            self.display.increment_stat('info')
-        
-        self.stats['vulnerabilities_found'] += len(result.get('cves', []))
-        
-        self.display.show_result(
-            domain=domain,
-            level=result['level'],
-            score=result['score'],
-            wp_version=result.get('wp_version', ''),
-            cve_count=len(result.get('cves', []))
+
+        level = result.get('level')
+        if level not in ("HIGH", "CRITICAL"):
+            return
+
+        color = result.get('color_code', '\033[91m')
+        reset = "\033[0m"
+
+        domain = result.get('domain', 'unknown')
+        score = result.get('score', 0)
+        findings = result.get('findings', [])
+
+        print(
+            f"\n{color}[!] {domain} "
+            f"score={score} "
+            f"issues={len(findings)} "
+            f"level={level}{reset}"
         )
-        
-        self.results.append(result)
-        
-        if self.output_file:
-            await self.save_to_file(result)
+
+    async def log_wp_detection(self, event: Event):
+        """
+        Realtime WP detection display (1-line overwrite)
+        Ported UI style from 2.0
+        """
+        data = event.data
+
+        # init stats
+        self.stats.setdefault('total_domains', 0)
+        self.stats.setdefault('wp', 0)
+        self.stats.setdefault('non_wp', 0)
+
+        # update stats
+        self.stats['total_domains'] += 1
+        if data.get('is_wp'):
+            self.stats['wp'] += 1
+            status = "WP"
+            color = "\033[92m"
+        else:
+            self.stats['non_wp'] += 1
+            status = "NO"
+            color = "\033[90m"
+
+        total = self.stats['wp'] + self.stats['non_wp']
+        wp_percent = (self.stats['wp'] / total * 100) if total > 0 else 0.0
+
+        # progress bar
+        bar_width = 30
+        filled = int(wp_percent / 100 * bar_width)
+        bar = f"[{'█' * filled}{'░' * (bar_width - filled)}]"
+
+        domain = data.get('domain', '')[:35]
+
+        print(
+            f"\r\033[K{color}{status}\033[0m "
+            f"{domain:<35} "
+            f"{bar} WP:{self.stats['wp']:3d} ({wp_percent:5.1f}%)",
+            end="",
+            flush=True
+        )
+
     
     async def save_to_file(self, result: Dict):
         """Save result to JSON file"""
@@ -2203,29 +2255,36 @@ class EnhancedOutputManager:
             else:
                 data = []
             
+            # Add new result
             data.append(result)
             
+            # Write back
             with open(self.output_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
                 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[OutputManager] Save error: {e}")
 
 # =================== UPDATED PIPELINE ===================
 class EnhancedWASEPipeline:
-    """Enhanced pipeline với display gọn gàng"""
+    """Enhanced pipeline với tất cả cải tiến"""
     
     def __init__(self, targets_file: Optional[str] = None, output_file: Optional[str] = None, 
-                 workers: int = 12, discovery: bool = True, history_file: str = "scanned_history.txt"):
+                     workers: int = 12, discovery: bool = True, history_file: str = "scanned_history.txt"):  
         self.targets_file = targets_file
         self.output_file = output_file
         self.workers = workers
         self.discovery = discovery
         self.is_running = False
         
+        # Initialize components
         self.event_bus = AsyncEventBus(max_size=Config.EVENT_BUS_SIZE)
         
+        # Producers
         self.producers = []
+        
+
+
         self.pre_filter = PreFilter(self.event_bus, history_file)
         self.wp_detector = WPGateDetector(self.event_bus, workers=workers)
         self.wp_fingerprint = WPCoreFingerprint(self.event_bus)
@@ -2233,70 +2292,93 @@ class EnhancedWASEPipeline:
         self.risk_scorer = EnhancedRiskScorer(self.event_bus)
         self.output_manager = EnhancedOutputManager(self.event_bus, output_file)
     
+
+
     async def setup_producers(self):
         """Setup producers"""
         if self.targets_file:
-            print(f"Mode: Targeted scan from {self.targets_file}")
+            print(f"[Pipeline] Mode: Targeted scan từ {self.targets_file}")
             producer = TargetFileProducer(self.event_bus, self.targets_file)
             self.producers.append(producer)
         elif self.discovery:
-            print("Mode: Full discovery + deep scan")
+            print(f"[Pipeline] Mode: Full discovery + deep scan")
             self.producers.extend([
                 DorkProducer(self.event_bus),
                 PassiveDNSProducer(self.event_bus),
             ])
         else:
-            print("No producers configured!")
+            print("[Pipeline] Không có producers nào được cấu hình!")
             return False
         return True
     
     async def run(self):
         """Chạy enhanced pipeline"""
+        print(f"""
+╔════════════════════════════════════════════════════════════════════════╗
+║         WORDPRESS ATTACK SURFACE ENGINE (WASE) v1.5                   ║
+║                     Tối ưu hóa Version Detection                      ║
+╚════════════════════════════════════════════════════════════════════════╝
+        """)
+        
         self.is_running = True
         
         try:
+            # Setup producers
             if not await self.setup_producers():
                 return
             
+            # Start event bus
             bus_task = asyncio.create_task(self.event_bus.run())
             
+            # Start producers
             for producer in self.producers:
                 await producer.start()
+                print(f"[Pipeline] Đã khởi động producer: {producer.name}")
             
-            print("\n🚀 PIPELINE STARTED - Press CTRL+C to stop\n")
+            print(f"\n{'═' * 80}")
+            print("🚀 ENHANCED PIPELINE ĐÃ BẮT ĐẦU - Deep enumeration enabled")
+            print(f"{'═' * 80}\n")
+            print("📢 NHẤN CTRL+C ĐỂ DỪNG NGAY\n")
             
+            # ĐỢI producers hoàn thành hoặc bị interrupt
             try:
+                # Chờ tất cả producers hoàn thành
                 producer_tasks = [asyncio.create_task(self._wait_for_producer(p)) 
                                  for p in self.producers]
                 
-                await asyncio.wait(
+                # Chờ một trong hai: producers hoàn thành HOẶC keyboard interrupt
+                done, pending = await asyncio.wait(
                     producer_tasks,
                     timeout=None,
                     return_when=asyncio.FIRST_COMPLETED
                 )
                 
+                # Nếu có pending tasks, cancel chúng
+                for task in pending:
+                    task.cancel()
+                
             except KeyboardInterrupt:
-                print("\n🛑 CTRL+C RECEIVED - STOPPING PIPELINE!")
+                print("\n\n🛑 NHẬN CTRL+C - DỪNG PIPELINE!")
             
         except KeyboardInterrupt:
-            pass
+            print("\n🛑 Keyboard interrupt trong pipeline")
         except Exception as e:
-            pass
+            print(f"[Pipeline] Lỗi: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
+            # DỪNG MỌI THỨ
             await self._force_shutdown()
             
+            # Final stats
             stats = self.output_manager.stats
-            display_stats = self.output_manager.display.stats
-            
-            # Clear và hiển thị summary
-            print("\033[2J\033[H", end="")
-            print("=" * 80)
-            print("📊 FINAL STATISTICS")
-            print("=" * 80)
-            print(f"Total domains processed: {display_stats['total']}")
-            print(f"WordPress sites found: {display_stats['wp_detected']}")
-            print(f"Vulnerabilities identified: {stats['vulnerabilities_found']}")
-            print(f"\nRisk distribution:")
+            print(f"\n{'═' * 80}")
+            print("📊 THỐNG KÊ CUỐI CÙNG")
+            print(f"{'═' * 80}")
+            print(f"Tổng domains đã xử lý: {stats['total']}")
+            print(f"Sites WordPress tìm thấy: {stats['wp']}")
+            print(f"Lỗ hổng đã xác định: {stats['vulnerabilities_found']}")
+            print(f"\nPhân bố rủi ro:")
             print(f"  • CRITICAL: {stats['critical']}")
             print(f"  • HIGH: {stats['high']}")
             print(f"  • MEDIUM: {stats['medium']}")
@@ -2304,35 +2386,49 @@ class EnhancedWASEPipeline:
             print(f"  • INFO: {stats['info']}")
             
             if self.output_file:
-                print(f"\n💾 Results saved to: {self.output_file}")
+                print(f"\n📁 Kết quả đã lưu vào: {self.output_file}")
             
-            print(f"\n✅ Pipeline completed successfully!")
+            print(f"\n✅ Enhanced pipeline hoàn thành thành công!")
             
+            # THOÁT NGAY LẬP TỨC - QUAN TRỌNG!
             import sys
-            sys.exit(0)
+            sys.exit(0)  # <-- THÊM DÒNG NÀY!
     
     async def _wait_for_producer(self, producer):
         """Chờ producer hoàn thành"""
+        # Giả lập chờ producer
         while producer.is_running:
             await asyncio.sleep(0.5)
         return True
     
+    
     async def _force_shutdown(self):
         """Force shutdown với cleanup đầy đủ"""
+        print("\n" + "!" * 80)
+        print("🛑 FORCE SHUTDOWN - ĐANG DỪNG TẤT CẢ!")
+        print("!" * 80)
+
         self.is_running = False
 
+        # 1️⃣ Dừng producers
+        print("[Shutdown] Stopping producers...")
         for producer in self.producers:
             try:
                 await producer.stop()
-            except:
-                pass
+            except Exception as e:
+                print(f"[Producer stop error] {producer.name}: {e}")
 
+        # 2️⃣ Dừng event bus
+        print("[Shutdown] Stopping event bus...")
         if hasattr(self.event_bus, 'stop'):
             try:
                 await self.event_bus.stop()
-            except:
-                pass
+            except Exception as e:
+                print(f"[EventBus stop error] {e}")
 
+        # 3️⃣ 🆕 Cleanup EnhancedAttackSurfaceEnumerator
+        print("[Shutdown] Cleaning up all components...")
+        
         components_to_cleanup = [
             ('WPGateDetector', self.wp_detector),
             ('WPCoreFingerprint', self.wp_fingerprint),
@@ -2343,23 +2439,30 @@ class EnhancedWASEPipeline:
             if hasattr(component, 'cleanup'):
                 try:
                     await component.cleanup()
-                except:
-                    pass
+                    print(f"[Cleanup] ✓ {name} cleaned up")
+                except Exception as e:
+                    print(f"[Cleanup error] {name}: {e}")
 
+        # 4️⃣ Cancel tất cả tasks còn lại
+        print("[Shutdown] Cancelling remaining tasks...")
         current_task = asyncio.current_task()
         all_tasks = [t for t in asyncio.all_tasks() if t is not current_task and not t.done()]
 
         if all_tasks:
+            print(f"[Shutdown] Cancelling {len(all_tasks)} tasks...")
             for task in all_tasks:
                 task.cancel()
 
             try:
-                await asyncio.wait(all_tasks, timeout=1.0)
-            except:
-                pass
+                await asyncio.wait(all_tasks, timeout=3.0)
+            except Exception as e:
+                print(f"[Task cancel error] {e}")
 
+        # 5️⃣ Cleanup TẤT CẢ aiohttp ClientSession
+        print("[Shutdown] Closing all sessions...")
         sessions_to_close = []
 
+        # Thu thập sessions từ các components
         if hasattr(self, 'wp_detector') and hasattr(self.wp_detector, 'session') and self.wp_detector.session:
             sessions_to_close.append(('WPGateDetector', self.wp_detector.session))
             
@@ -2369,12 +2472,20 @@ class EnhancedWASEPipeline:
         if hasattr(self, 'surface_enumerator') and hasattr(self.surface_enumerator, 'session') and self.surface_enumerator.session:
             sessions_to_close.append(('EnhancedAttackSurfaceEnumerator', self.surface_enumerator.session))
 
+        # Close tất cả sessions
         for name, session in sessions_to_close:
             try:
                 if not session.closed:
                     await session.close()
-            except:
-                pass
+                    print(f"[Cleanup] ✓ Closed session: {name}")
+            except Exception as e:
+                print(f"[Session close error] {name}: {e}")
+
+        # 6️⃣ 🆕 Force wait để đảm bảo connectors đóng hoàn toàn
+        print("[Shutdown] Waiting for connectors to close...")
+        await asyncio.sleep(0.5)  # Cho connectors thời gian đóng
+
+        print("✅ SHUTDOWN HOÀN TẤT - All cleanup done")
 
 # =================== MAIN ===================
 async def main():
@@ -2385,6 +2496,7 @@ async def main():
         print(f"❌ Không tìm thấy file targets: {args.targets}")
         return
     
+    # Tạo pipeline
     pipeline = EnhancedWASEPipeline(
         targets_file=args.targets,
         output_file=args.output,
@@ -2393,16 +2505,18 @@ async def main():
         history_file=args.history 
     )
     
+    # CHẠY VÀ THOÁT
     try:
         await pipeline.run()
     except KeyboardInterrupt:
-        print("\n👋 Stopped by user")
+        print("\n\n👋 Dừng theo yêu cầu người dùng")
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n❌ Lỗi: {e}")
         import traceback
         traceback.print_exc()
     
-    print("\n🏁 Program exit")
+    # THOÁT CHƯƠNG TRÌNH
+    print("\n🏁 Kết thúc chương trình")
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -2411,13 +2525,13 @@ def parse_args():
         epilog="""
 Examples:
   # Full discovery mode (no targets file)
-  python wase.py --workers 12 --output results.json
+  python gemini.py --workers 12 --output results.json
   
   # Targeted scan from file
-  python wase.py --targets targets.txt --output scan_results.json
+  python gemini.py --targets targets.txt --output scan_results.json
   
   # Quick scan với ít workers
-  python wase.py --targets urls.txt --workers 4 --output quick.json
+  python gemini.py --targets urls.txt --workers 4 --output quick.json
         """
     )
     
@@ -2432,7 +2546,7 @@ Examples:
     
     parser.add_argument('--no-discovery', action='store_true',
                        help='Tắt discovery mode (chỉ dùng nếu có --targets)')
-    parser.add_argument('--history', type=str, default='scanned_history.txt',
+    parser.add_argument('--history', type=str, default='scanned_history.txt',  # 🆕 THÊM OPTION NÀY
                    help='File lưu domains đã scan (default: scanned_history.txt)')
     return parser.parse_args()
 
@@ -2444,6 +2558,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 KeyboardInterrupt - Cleaning up...")
     finally:
+        # Cleanup loop
         tasks = asyncio.all_tasks(loop)
         for t in tasks:
             t.cancel()
