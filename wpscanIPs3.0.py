@@ -572,16 +572,20 @@ class WPGateDetector:
             results = await asyncio.gather(*probes, return_exceptions=True)
             http_alive = not isinstance(results[0], Exception)
 
-            # Tính confidence score
             confidence = 0
             signals = []
-            
+
             for i, result in enumerate(results):
                 if isinstance(result, dict) and result.get('detected'):
-                    confidence += 25  # Mỗi probe thành công +25%
+                    confidence += 25
                     signals.append(result.get('signal', f'probe_{i}'))
-            
-            is_wp = confidence >= 10  # Ngưỡng 50%
+
+            if confidence == 0 and http_alive:
+                confidence = 10
+                signals.append("http_alive_stealth")
+
+            is_wp = confidence >= 25
+
             
 
             # ===== TERMINAL RENDER: WP DETECTION RESULT =====
