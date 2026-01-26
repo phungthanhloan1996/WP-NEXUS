@@ -438,16 +438,19 @@ class PreFilter:
             print(f"[PreFilter] ⏭️  Skip (scanned): {domain}")
             return
         self.seen_domains.add(domain)
-        self._save_to_history(domain)
         # 2. Normalize và validate
         normalized = self.normalize_domain(domain)
         if not normalized:
+            print(f"[DROP][FORMAT] {domain}")
             return
+
         
         # 3. DNS resolve nhanh
         is_resolvable = await self.quick_dns_check(normalized)
         if not is_resolvable:
+            print(f"[DROP][DNS] {normalized}")
             return
+
         
         # 4. Tạo clean domain event
         clean_event = Event(
@@ -497,16 +500,32 @@ class PreFilter:
             return None
     
     async def quick_dns_check(self, domain: str) -> bool:
-        """DNS resolve nhanh với timeout ngắn"""
         try:
-            # Try A record
-            await asyncio.wait_for(
-                self.dns_resolver.query(domain, 'A'),
-                timeout=Config.DNS_TIMEOUT
-            )
+            # Thử A record
+            try:
+                await asyncio.wait_for(
+                    self.dns_resolver.query(domain, 'A'),
+                    timeout=Config.DNS_TIMEOUT
+                )
+                return True
+            except:
+                pass
+
+            # Thử AAAA
+            try:
+                await asyncio.wait_for(
+                    self.dns_resolver.query(domain, 'AAAA'),
+                    timeout=Config.DNS_TIMEOUT
+                )
+                return True
+            except:
+                pass
+
+            # ❗ Cho qua DNS fail → để HTTP quyết định
             return True
         except:
-            return False
+            return True
+
 
 # =================== PHASE 2: WP GATE DETECTOR ===================
 class WPGateDetector:
@@ -561,8 +580,19 @@ class WPGateDetector:
                     confidence += 25  # Mỗi probe thành công +25%
                     signals.append(result.get('signal', f'probe_{i}'))
             
-            is_wp = confidence >= 50  # Ngưỡng 50%
+            is_wp = confidence >= 25  # Ngưỡng 50%
             
+
+            # ===== TERMINAL RENDER: WP DETECTION RESULT =====
+            if confidence == 0:
+                print(f"[NON-WP] {domain}")
+            elif 0 < confidence < 50:
+                print(f"[WP?][LOW] {domain} confidence={confidence} signals={signals}")
+            else:
+                print(f"[WP][DETECTED] {domain} confidence={confidence} signals={signals}")
+
+
+
             # Tạo event kết quả
             wp_event = Event(
                 type=EventType.WP_DETECTED,
@@ -743,7 +773,30 @@ class WPCoreFingerprint:
             'rest_api': results[4] if not isinstance(results[4], Exception) else False,
             'timestamp': time.time()
         }
-        
+            
+
+        # ===== TERMINAL RENDER: CONFIRMED WP =====
+        surfaces = []
+        if wp_profile['wp_version']:
+            surfaces.append("version")
+        if wp_profile['theme']:
+            surfaces.append("theme")
+        if wp_profile['xmlrpc']:
+            surfaces.append("xmlrpc")
+        if wp_profile['rest_api']:
+            surfaces.append("rest")
+
+        surface_str = ",".join(surfaces) if surfaces else "no-surface"
+        print(f"[WP][OK] {domain} | {surface_str}")
+
+
+                # ✅ SAVE CONFIRMED WP TARGET ONLY
+        try:
+            with open("scanned_wp_targets.txt", "a") as f:
+                f.write(domain + "\n")
+        except Exception:
+            pass
+
         # Publish profile event
         profile_event = Event(
             type=EventType.WP_PROFILE,
