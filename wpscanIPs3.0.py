@@ -570,7 +570,8 @@ class WPGateDetector:
             ]
             
             results = await asyncio.gather(*probes, return_exceptions=True)
-            
+            http_alive = not isinstance(results[0], Exception)
+
             # Tính confidence score
             confidence = 0
             signals = []
@@ -580,7 +581,7 @@ class WPGateDetector:
                     confidence += 25  # Mỗi probe thành công +25%
                     signals.append(result.get('signal', f'probe_{i}'))
             
-            is_wp = confidence >= 25  # Ngưỡng 50%
+            is_wp = confidence >= 10  # Ngưỡng 50%
             
 
             # ===== TERMINAL RENDER: WP DETECTION RESULT =====
@@ -1656,8 +1657,8 @@ class EnhancedAttackSurfaceEnumerator:
         detected = []
         popular_plugins = list(Config.POPULAR_PLUGINS.keys())
         
-        batch_size = 10
-        max_total_time = 90  # 🆕 Max 90 giây cho toàn bộ plugin detection
+        batch_size = 5
+        max_total_time = 60  # 🆕 Max 90 giây cho toàn bộ plugin detection
         start_time = time.time()
         
         for i in range(0, len(popular_plugins), batch_size):
@@ -1674,7 +1675,7 @@ class EnhancedAttackSurfaceEnumerator:
                 tasks = [self._check_single_plugin(domain, slug) for slug in batch]
                 results = await asyncio.wait_for(
                     asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=10.0
+                    timeout=6.0
                 )
                 
                 for j, result in enumerate(results):
