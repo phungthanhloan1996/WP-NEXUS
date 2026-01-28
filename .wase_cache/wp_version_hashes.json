@@ -1,0 +1,254 @@
+{
+  "6.9": {
+    "/wp-includes/version.php": {
+      "md5": "81e72555766c3780a97aab29641c8709",
+      "size": 1104
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "f0cc9ba5cf46af0cd73d521803e3b07e",
+      "size": 22762
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "2f9c93eca3f761e9a87c735cf3a24a39",
+      "size": 1251
+    },
+    "/readme.html": {
+      "md5": "161dba8de49f41eee63421cce887ca0e",
+      "size": 7425
+    }
+  },
+  "6.8.3": {
+    "/wp-includes/version.php": {
+      "md5": "24ffe57a60fa1ef5b21a32efeb728a1f",
+      "size": 1090
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "c4b50535f3e989a77d537d5486342d47",
+      "size": 19251
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "2f9c93eca3f761e9a87c735cf3a24a39",
+      "size": 1251
+    },
+    "/readme.html": {
+      "md5": "2ce2a1951e29c969de54e24634e11396",
+      "size": 7425
+    }
+  },
+  "6.7.4": {
+    "/wp-includes/version.php": {
+      "md5": "8886be935035815d99e500c11cd6996c",
+      "size": 931
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "b976b651932bfd25b9ddb5b7693d88a7",
+      "size": 18726
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "2f9c93eca3f761e9a87c735cf3a24a39",
+      "size": 1251
+    },
+    "/readme.html": {
+      "md5": "1f04dd54c5f57fc8d031b14b4696023e",
+      "size": 7409
+    }
+  },
+  "6.6.4": {
+    "/wp-includes/version.php": {
+      "md5": "e22dfea5638a57692786a3178f002f45",
+      "size": 931
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "b976b651932bfd25b9ddb5b7693d88a7",
+      "size": 18726
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "2f9c93eca3f761e9a87c735cf3a24a39",
+      "size": 1251
+    },
+    "/readme.html": {
+      "md5": "1f04dd54c5f57fc8d031b14b4696023e",
+      "size": 7409
+    }
+  },
+  "6.5.7": {
+    "/wp-includes/version.php": {
+      "md5": "9e783447f70aa3690d376dd3a8a87e88",
+      "size": 930
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "b976b651932bfd25b9ddb5b7693d88a7",
+      "size": 18726
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "2f9c93eca3f761e9a87c735cf3a24a39",
+      "size": 1251
+    },
+    "/readme.html": {
+      "md5": "015924092c38a9ffa6ba116c3aec0686",
+      "size": 7401
+    }
+  },
+  "6.4.7": {
+    "/wp-includes/version.php": {
+      "md5": "8859edba173520666810c47a48514efa",
+      "size": 928
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "4cc444663c1e69cb8ac7b909e7192bca",
+      "size": 18692
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "2f9c93eca3f761e9a87c735cf3a24a39",
+      "size": 1251
+    },
+    "/readme.html": {
+      "md5": "bb5d8bd5e5cbf6e788df2b613656e61c",
+      "size": 7399
+    }
+  },
+  "6.3.7": {
+    "/wp-includes/version.php": {
+      "md5": "2619dc47e96fcee311dac4c39812a554",
+      "size": 928
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "4cc444663c1e69cb8ac7b909e7192bca",
+      "size": 18692
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "6c2025cf2c3282b1021c6105109be7dc",
+      "size": 1585
+    },
+    "/readme.html": {
+      "md5": "bb5d8bd5e5cbf6e788df2b613656e61c",
+      "size": 7399
+    }
+  },
+  "6.2.8": {
+    "/wp-includes/version.php": {
+      "md5": "ab28d456d1dbe9fb0cb6358a1b2c0aa6",
+      "size": 929
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "4cc444663c1e69cb8ac7b909e7192bca",
+      "size": 18692
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "6c2025cf2c3282b1021c6105109be7dc",
+      "size": 1585
+    },
+    "/readme.html": {
+      "md5": "5e408385ba5baad561f45380dba623aa",
+      "size": 7402
+    }
+  },
+  "6.1.9": {
+    "/wp-includes/version.php": {
+      "md5": "f4ba8dd9bcdd729dd6565d76da1f9310",
+      "size": 929
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "32beb68a374e3aeac00abdf9e12b84ea",
+      "size": 18617
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "6c2025cf2c3282b1021c6105109be7dc",
+      "size": 1585
+    },
+    "/readme.html": {
+      "md5": "a3539b0ed6dd285b1cbd81f1b66ddbe8",
+      "size": 7389
+    }
+  },
+  "6.0.11": {
+    "/wp-includes/version.php": {
+      "md5": "2cc76c22951f586f52b231cb6c791e70",
+      "size": 930
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "32beb68a374e3aeac00abdf9e12b84ea",
+      "size": 18617
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "6c2025cf2c3282b1021c6105109be7dc",
+      "size": 1585
+    },
+    "/readme.html": {
+      "md5": "5f5f739bee08d0ac236d3409a40e4e37",
+      "size": 7401
+    }
+  },
+  "5.9.12": {
+    "/wp-includes/version.php": {
+      "md5": "6bc822cce884c85b6f6dbfe24b7901fe",
+      "size": 930
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "116c86c56f8db0bb63f15ceda50fdc98",
+      "size": 18181
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "66b3a15ec6f78bae407fa735fac0ab8c",
+      "size": 1544
+    },
+    "/readme.html": {
+      "md5": "9834aec0c099711881eb24f6b810d67b",
+      "size": 7437
+    }
+  },
+  "5.8.12": {
+    "/wp-includes/version.php": {
+      "md5": "c787a6ba7bbbc0ded83dc8ccca586a62",
+      "size": 767
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "116c86c56f8db0bb63f15ceda50fdc98",
+      "size": 18181
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "7c5c36baa69fcdb57bd891cda90920b3",
+      "size": 1478
+    },
+    "/readme.html": {
+      "md5": "5c5fb2fc92934133f676ab414579b55b",
+      "size": 7346
+    }
+  },
+  "5.7.14": {
+    "/wp-includes/version.php": {
+      "md5": "e66baec89469911f3630f4a533eb3263",
+      "size": 767
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "eaa8641bcda2371f4024a71fbb67de3b",
+      "size": 14229
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "7c5c36baa69fcdb57bd891cda90920b3",
+      "size": 1478
+    },
+    "/readme.html": {
+      "md5": "6399e050eca3e706b46e8e4848cbadbf",
+      "size": 7345
+    }
+  },
+  "5.6.16": {
+    "/wp-includes/version.php": {
+      "md5": "67ede9e6baf443bb2432349c081bdf02",
+      "size": 767
+    },
+    "/wp-includes/js/wp-emoji-release.min.js": {
+      "md5": "eaa8641bcda2371f4024a71fbb67de3b",
+      "size": 14229
+    },
+    "/wp-includes/js/wp-embed.min.js": {
+      "md5": "7c5c36baa69fcdb57bd891cda90920b3",
+      "size": 1478
+    },
+    "/readme.html": {
+      "md5": "ad262162850a9a80bf78ce0f52a3e629",
+      "size": 7278
+    }
+  }
+}

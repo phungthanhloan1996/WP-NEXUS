@@ -1931,218 +1931,514 @@ class VersionDetection:
             return f"{self.version} (confidence: {self.confidence}%, method: {self.method})"
         return "Not detected"
 
-class PluginVersionResolver:
+# =================== ENHANCED PLUGIN DETECTION SYSTEM ===================
+class EnhancedPluginVersionResolver:
+    """Plugin detection với 9 phương pháp xác thực và cross-validation"""
+    
     def __init__(self, session: aiohttp.ClientSession, domain: str):
         self.session = session
         self.domain = domain
-        self.cache = {}
         self.html_cache = None
+        self.js_assets_cache = {}
+        self.cache = {}
         
-        self.VERSION_PATTERNS = [
-            r'\*\s*Version:\s*([\d\.]+)',
-            r'@version\s+([\d\.]+)',
-            r"define\('.*VERSION',\s*['\"]([\d\.]+)['\"]",
-            r'define\(".*VERSION",\s*["\']([\d\.]+)["\']',
-            r'"version"\s*:\s*"([\d\.]+)"',
-            r"'version'\s*=>\s*'([\d\.]+)'",
-            r'\$version\s*=\s*[\'"]([\d\.]+)[\'"]',
-            r'Version\s*=\s*[\'"]([\d\.]+)[\'"]',
-            r'const\s+VERSION\s*=\s*[\'"]([\d\.]+)[\'"]',
-            r'v([\d\.]+)',
-            r'version\s+([\d\.]+)',
-            r'Version\s+([\d\.]+)',
-        ]
+        # Enhanced version patterns với priority
+        self.VERSION_PATTERNS = {
+            'header_primary': [
+                r'^\s*\*\s*Version:\s*([\d\.]+(?:-[a-z0-9]+)?)',
+                r'@version\s+([\d\.]+)',
+                r'Plugin Version:\s*([\d\.]+)',
+            ],
+            'header_secondary': [
+                r"define\('([^']*VERSION[^']*)',\s*['\"]([\d\.]+(?:-[a-z0-9]+)?)['\"]\)",
+                r'define\("([^"]*VERSION[^"]*)",\s*["\']([\d\.]+(?:-[a-z0-9]+)?)["\']\)',
+                r'const\s+VERSION\s*=\s*[\'"]([\d\.]+(?:-[a-z0-9]+)?)[\'"]',
+            ],
+            'metadata': [
+                r'"version"\s*:\s*"([\d\.]+(?:-[a-z0-9]+)?)"',
+                r"'version'\s*=>\s*'([\d\.]+(?:-[a-z0-9]+)?)'",
+                r'<version>([\d\.]+(?:-[a-z0-9]+)?)</version>',
+            ],
+            'asset': [
+                r'ver=([\d\.]+(?:-[a-z0-9]+)?)',
+                r'v=([\d\.]+(?:-[a-z0-9]+)?)',
+                r'version=([\d\.]+(?:-[a-z0-9]+)?)',
+            ]
+        }
     
-    async def resolve(self, plugin_slug: str) -> VersionDetection:
-        if plugin_slug in self.cache:
-            return self.cache[plugin_slug]
+    async def resolve_with_validation(self, plugin_slug: str) -> Tuple[VersionDetection, bool]:
+        """Resolve version và xác nhận plugin thực sự tồn tại"""
         
-        methods = [
-            (self._detect_via_readme, 85),
-            (self._detect_via_plugin_header, 95),
-            (self._detect_via_assets, 75),
-            (self._detect_via_changelog, 70),
+        # Bước 1: Xác nhận plugin thực sự tồn tại
+        is_valid_plugin = await self._validate_plugin_existence(plugin_slug)
+        if not is_valid_plugin:
+            return VersionDetection(confidence=0, method="invalid_plugin"), False
+        
+        # Bước 2: Thu thập version từ nhiều nguồn
+        version_results = await self._collect_version_sources(plugin_slug)
+        
+        # Bước 3: Cross-validation và scoring
+        best_result = self._cross_validate_versions(version_results, plugin_slug)
+        
+        # Bước 4: Xác nhận thêm với secondary methods
+        if best_result.version and best_result.confidence < 80:
+            confirmed = await self._secondary_verification(plugin_slug, best_result.version)
+            if confirmed:
+                best_result.confidence = min(best_result.confidence + 15, 95)
+        
+        return best_result, True
+    
+    async def _validate_plugin_existence(self, plugin_slug: str) -> bool:
+        """Xác nhận plugin thực sự tồn tại với nhiều phương pháp"""
+        validation_methods = [
+            self._check_plugin_directory,
+            self._check_plugin_readme,
+            self._check_plugin_main_file,
+            self._check_assets_references,
         ]
         
-        best_result = VersionDetection()
+        valid_count = 0
+        for method in validation_methods:
+            if await method(plugin_slug):
+                valid_count += 1
         
-        for method_func, base_confidence in methods:
+        return valid_count >= 2  # Cần ít nhất 2 phương pháp xác nhận
+    
+    async def _check_plugin_directory(self, plugin_slug: str) -> bool:
+        """Check thư mục plugin"""
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/"
             try:
-                result = await method_func(plugin_slug)
-                if result.confidence > best_result.confidence:
-                    best_result = result
-                    
-                    if best_result.confidence >= 90:
-                        break
+                async with self.session.head(url, timeout=3, ssl=False) as resp:
+                    if resp.status < 400:
+                        # Kiểm tra thêm nội dung
+                        async with self.session.get(url, timeout=3, ssl=False) as resp2:
+                            if resp2.status == 200:
+                                text = await resp2.text()
+                                if 'index of' not in text.lower():
+                                    return True
             except:
                 continue
-        
-        self.cache[plugin_slug] = best_result
-        return best_result
+        return False
     
-    async def _detect_via_readme(self, plugin_slug: str) -> VersionDetection:
-        readme_patterns = [
-            r'Stable tag:\s*([\d\.]+)',
-            r'Version:\s*([\d\.]+)',
-            r'Tested up to:\s*([\d\.]+)',
-            r'Requires at least:\s*([\d\.]+)',
+    async def _check_plugin_readme(self, plugin_slug: str) -> bool:
+        """Check readme.txt"""
+        readme_files = ['readme.txt', 'README.txt', 'README.md']
+        for filename in readme_files:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{filename}"
+                try:
+                    async with self.session.get(url, timeout=3, ssl=False) as resp:
+                        if resp.status == 200:
+                            content = await resp.text()
+                            # Validate readme content
+                            if 'wordpress' in content.lower() or 'plugin' in content.lower():
+                                return True
+                except:
+                    continue
+        return False
+    
+    async def _check_plugin_main_file(self, plugin_slug: str) -> bool:
+        """Check file chính của plugin"""
+        main_files = [
+            f"{plugin_slug}.php",
+            f"{plugin_slug.replace('-', '_')}.php",
+            "index.php",
+            "plugin.php",
+            "main.php",
         ]
         
+        for main_file in main_files:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{main_file}"
+                try:
+                    async with self.session.head(url, timeout=3, ssl=False) as resp:
+                        if resp.status < 400:
+                            # Kiểm tra content có phải PHP hợp lệ
+                            async with self.session.get(url, timeout=3, ssl=False) as resp2:
+                                content = await resp2.text()
+                                if '<?php' in content or 'Plugin Name:' in content:
+                                    return True
+                except:
+                    continue
+        return False
+    
+    async def _check_assets_references(self, plugin_slug: str) -> bool:
+        """Check references trong HTML/JS"""
+        html = await self._get_homepage_html()
+        if not html:
+            return False
+        
+        patterns = [
+            rf'/wp-content/plugins/{re.escape(plugin_slug)}/',
+            rf'plugins/{re.escape(plugin_slug)}/',
+            rf'"{re.escape(plugin_slug)}"',
+        ]
+        
+        for pattern in patterns:
+            if re.search(pattern, html, re.IGNORECASE):
+                return True
+        
+        return False
+    
+    async def _collect_version_sources(self, plugin_slug: str) -> List[VersionDetection]:
+        """Thu thập version từ tất cả các nguồn có thể"""
+        tasks = [
+            self._detect_from_readme(plugin_slug),
+            self._detect_from_plugin_header(plugin_slug),
+            self._detect_from_main_file(plugin_slug),
+            self._detect_from_assets(plugin_slug),
+            self._detect_from_changelog(plugin_slug),
+            self._detect_from_plugin_json(plugin_slug),
+            self._detect_from_composer_json(plugin_slug),
+            self._detect_from_translation_files(plugin_slug),
+        ]
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        valid_results = []
+        
+        for result in results:
+            if isinstance(result, VersionDetection) and result.version:
+                valid_results.append(result)
+        
+        return valid_results
+    
+    async def _detect_from_readme(self, plugin_slug: str) -> VersionDetection:
+        """Detect từ readme với các patterns nâng cao"""
         for scheme in ['https://', 'http://']:
             url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/readme.txt"
             try:
-                async with self.session.get(url, timeout=3, ssl=False) as resp:
+                async with self.session.get(url, timeout=4, ssl=False) as resp:
                     if resp.status == 200:
-                        content = await resp.text(encoding='utf-8', errors='ignore')
+                        content = await resp.text()
                         
-                        for pattern in readme_patterns:
+                        # Prioritized patterns
+                        patterns_priority = [
+                            (r'Stable tag:\s*([\d\.]+(?:-[a-z0-9]+)?)', 95),
+                            (r'^\s*\*\s*Version:\s*([\d\.]+(?:-[a-z0-9]+)?)', 90),
+                            (r'Version:\s*([\d\.]+(?:-[a-z0-9]+)?)', 85),
+                            (r'Tested up to:\s*([\d\.]+)', 70),
+                            (r'Requires at least:\s*([\d\.]+)', 65),
+                        ]
+                        
+                        for pattern, confidence in patterns_priority:
                             match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
                             if match:
                                 version = match.group(1).strip()
                                 if self._is_valid_version(version):
                                     return VersionDetection(
                                         version=version,
-                                        confidence=85,
-                                        method="readme_txt",
-                                        evidence=f"Found in readme.txt"
+                                        confidence=confidence,
+                                        method="readme",
+                                        evidence=f"readme.txt: {pattern[:30]}..."
                                     )
             except:
                 continue
-        
         return VersionDetection()
     
-    async def _detect_via_plugin_header(self, plugin_slug: str) -> VersionDetection:
-        slug_variants = [
-            plugin_slug,
-            plugin_slug.replace('-', '_'),
-            plugin_slug.replace('-', ''),
-            f"wp-{plugin_slug}",
-        ]
-        
-        candidate_files = set()
-        for variant in slug_variants:
-            candidate_files.update([
-                f"{variant}.php",
-                f"index.php",
-                f"plugin.php",
-                f"main.php",
-                f"init.php",
-                f"class-{variant}.php",
-                f"{variant}-main.php",
-                f"core.php",
-            ])
+    async def _detect_from_plugin_header(self, plugin_slug: str) -> VersionDetection:
+        """Detect từ header của file plugin chính"""
+        main_files = await self._find_main_plugin_files(plugin_slug)
         
         for scheme in ['https://', 'http://']:
-            for main_file in candidate_files:
+            for main_file in main_files:
                 url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{main_file}"
                 try:
-                    async with self.session.get(url, timeout=4, ssl=False) as resp:
+                    async with self.session.get(url, timeout=5, ssl=False) as resp:
                         if resp.status == 200:
-                            content = await resp.text(encoding='utf-8', errors='ignore')
+                            content = await resp.text()
                             
-                            lines = content.split('\n')[:100]
+                            # Tìm trong 50 dòng đầu (header area)
+                            lines = content.split('\n')[:50]
                             header_text = '\n'.join(lines)
                             
-                            version = self._extract_version_from_text(header_text)
-                            if version:
-                                return VersionDetection(
-                                    version=version,
-                                    confidence=95,
-                                    method="plugin_header",
-                                    evidence=f"Found in {main_file} header"
-                                )
-                            
-                            version = self._extract_version_from_text(content)
-                            if version:
-                                return VersionDetection(
-                                    version=version,
-                                    confidence=85,
-                                    method="plugin_content",
-                                    evidence=f"Found in {main_file} content"
-                                )
-                except:
-                    continue
-        
-        return VersionDetection()
-    
-    async def _detect_via_assets(self, plugin_slug: str) -> VersionDetection:
-        html = await self._get_homepage_html()
-        if not html:
-            return VersionDetection()
-        
-        asset_pattern = rf'/wp-content/plugins/{re.escape(plugin_slug)}/[^\s"\'>]+\.(?:js|css)\?ver=([\d\.]+)'
-        matches = re.findall(asset_pattern, html, re.IGNORECASE)
-        
-        if matches:
-            version_counts = Counter(matches)
-            most_common_version, count = version_counts.most_common(1)[0]
-            
-            if self._is_valid_version(most_common_version):
-                confidence = min(75 + (count * 5), 90)
-                return VersionDetection(
-                    version=most_common_version,
-                    confidence=confidence,
-                    method="asset_version",
-                    evidence=f"Found in {count} asset(s)"
-                )
-        
-        return VersionDetection()
-    
-    async def _detect_via_changelog(self, plugin_slug: str) -> VersionDetection:
-        changelog_files = [
-            'changelog.txt', 'changelog.md', 'CHANGELOG.md',
-            'changes.txt', 'CHANGES.txt', 'CHANGELOG'
-        ]
-        
-        for scheme in ['https://', 'http://']:
-            for filename in changelog_files:
-                url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{filename}"
-                try:
-                    async with self.session.get(url, timeout=3, ssl=False) as resp:
-                        if resp.status == 200:
-                            content = await resp.text(encoding='utf-8', errors='ignore')
-                            
+                            # Prioritized header patterns
                             patterns = [
-                                r'^(\d+\.\d+(?:\.\d+)?)\s',
-                                r'Version\s+(\d+\.\d+(?:\.\d+)?)',
-                                r'v(\d+\.\d+(?:\.\d+?))\s',
-                                r'(\d+\.\d+(?:\.\d+?))\s+\(\d{4}-\d{2}-\d{2}\)',
+                                (r'@version\s+([\d\.]+(?:-[a-z0-9]+)?)', 98),
+                                (r'Version:\s*([\d\.]+(?:-[a-z0-9]+)?)', 95),
+                                (r'Plugin Version:\s*([\d\.]+(?:-[a-z0-9]+)?)', 90),
                             ]
                             
-                            for pattern in patterns:
-                                match = re.search(pattern, content, re.MULTILINE | re.IGNORECASE)
+                            for pattern, confidence in patterns:
+                                match = re.search(pattern, header_text, re.IGNORECASE)
                                 if match:
                                     version = match.group(1).strip()
                                     if self._is_valid_version(version):
                                         return VersionDetection(
                                             version=version,
-                                            confidence=70,
-                                            method="changelog",
-                                            evidence=f"Found in {filename}"
+                                            confidence=confidence,
+                                            method="plugin_header",
+                                            evidence=f"{main_file} header"
                                         )
                 except:
                     continue
+        return VersionDetection()
+    
+    async def _detect_from_main_file(self, plugin_slug: str) -> VersionDetection:
+        """Deep scan trong toàn bộ file chính"""
+        main_files = await self._find_main_plugin_files(plugin_slug)
+        
+        for scheme in ['https://', 'http://']:
+            for main_file in main_files:
+                url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{main_file}"
+                try:
+                    async with self.session.get(url, timeout=6, ssl=False) as resp:
+                        if resp.status == 200:
+                            content = await resp.text()
+                            
+                            # Scan toàn bộ file với multiple patterns
+                            version = self._deep_scan_file_content(content)
+                            if version:
+                                return VersionDetection(
+                                    version=version,
+                                    confidence=85,
+                                    method="main_file_scan",
+                                    evidence=f"Deep scan in {main_file}"
+                                )
+                except:
+                    continue
+        return VersionDetection()
+    
+    def _deep_scan_file_content(self, content: str) -> Optional[str]:
+        """Deep scan với weighted patterns"""
+        weighted_patterns = [
+            (r"define\('([^']*VERSION[^']*)',\s*['\"]([\d\.]+(?:-[a-z0-9]+)?)['\"]\)", 10),
+            (r'const\s+VERSION\s*=\s*[\'"]([\d\.]+(?:-[a-z0-9]+)?)[\'"]', 9),
+            (r'\$version\s*=\s*[\'"]([\d\.]+(?:-[a-z0-9]+)?)[\'"]', 8),
+            (r'version\s*=\s*[\'"]([\d\.]+(?:-[a-z0-9]+)?)[\'"]', 7),
+            (r'public\s+\$version\s*=\s*[\'"]([\d\.]+(?:-[a-z0-9]+)?)[\'"]', 6),
+        ]
+        
+        best_version = None
+        best_score = 0
+        
+        for pattern, weight in weighted_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                if isinstance(match, tuple):
+                    version = match[1] if len(match) > 1 else match[0]
+                else:
+                    version = match
+                
+                if self._is_valid_version(version):
+                    # Tính score dựa trên vị trí (càng gần đầu file càng tốt)
+                    position = content.find(match if isinstance(match, str) else match[0])
+                    position_score = max(0, 10 - (position / 1000))
+                    total_score = weight + position_score
+                    
+                    if total_score > best_score:
+                        best_score = total_score
+                        best_version = version
+        
+        return best_version
+    
+    async def _detect_from_assets(self, plugin_slug: str) -> VersionDetection:
+        """Aggressive asset version detection"""
+        html = await self._get_homepage_html()
+        js_files = await self._collect_js_assets()
+        
+        all_assets = []
+        
+        # Tìm trong HTML
+        if html:
+            patterns = [
+                rf'src="[^"]*/wp-content/plugins/{re.escape(plugin_slug)}/[^"]*\.(?:js|css)\?ver=([^&"]+)',
+                rf'href="[^"]*/wp-content/plugins/{re.escape(plugin_slug)}/[^"]*\.(?:js|css)\?ver=([^&"]+)',
+            ]
+            
+            for pattern in patterns:
+                matches = re.findall(pattern, html, re.IGNORECASE)
+                all_assets.extend(matches)
+        
+        # Tìm trong JS files
+        for js_content in js_files.values():
+            pattern = rf'{re.escape(plugin_slug)}.*?ver=([\d\.]+(?:-[a-z0-9]+)?)'
+            matches = re.findall(pattern, js_content, re.IGNORECASE)
+            all_assets.extend(matches)
+        
+        if all_assets:
+            version_counts = Counter(all_assets)
+            most_common = version_counts.most_common(3)  # Top 3
+            
+            for version, count in most_common:
+                if self._is_valid_version(version):
+                    confidence = min(75 + (count * 3), 90)
+                    return VersionDetection(
+                        version=version,
+                        confidence=confidence,
+                        method="assets",
+                        evidence=f"Found in {count} asset references"
+                    )
         
         return VersionDetection()
     
-    def _extract_version_from_text(self, text: str) -> Optional[str]:
-        for pattern in self.VERSION_PATTERNS:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for match in matches:
-                if self._is_valid_version(match):
-                    return match
-        return None
+    async def _detect_from_plugin_json(self, plugin_slug: str) -> VersionDetection:
+        """Check plugin.json hoặc package.json"""
+        json_files = ['plugin.json', 'package.json', 'composer.json']
+        
+        for json_file in json_files:
+            for scheme in ['https://', 'http://']:
+                url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/{json_file}"
+                try:
+                    async with self.session.get(url, timeout=3, ssl=False) as resp:
+                        if resp.status == 200:
+                            content = await resp.text()
+                            try:
+                                data = json.loads(content)
+                                if 'version' in data:
+                                    version = str(data['version'])
+                                    if self._is_valid_version(version):
+                                        return VersionDetection(
+                                            version=version,
+                                            confidence=80,
+                                            method=json_file,
+                                            evidence=f"Found in {json_file}"
+                                        )
+                            except:
+                                continue
+                except:
+                    continue
+        return VersionDetection()
+    
+    async def _detect_from_composer_json(self, plugin_slug: str) -> VersionDetection:
+        """Check composer.json"""
+        return await self._detect_from_plugin_json(plugin_slug)  # Reuse logic
+    
+    async def _detect_from_translation_files(self, plugin_slug: str) -> VersionDetection:
+        """Check translation files (.po, .mo)"""
+        translation_patterns = [
+            rf'{re.escape(plugin_slug)}-([\d\.]+(?:-[a-z0-9]+)?)\.(?:po|mo)',
+            rf'({plugin_slug.replace("-", "_")})-([\d\.]+(?:-[a-z0-9]+)?)\.(?:po|mo)',
+        ]
+        
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/"
+            try:
+                async with self.session.get(url, timeout=3, ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text()
+                        for pattern in translation_patterns:
+                            matches = re.findall(pattern, content, re.IGNORECASE)
+                            for match in matches:
+                                if isinstance(match, tuple):
+                                    version = match[1] if len(match) > 1 else match[0]
+                                else:
+                                    version = match
+                                
+                                if self._is_valid_version(version):
+                                    return VersionDetection(
+                                        version=version,
+                                        confidence=70,
+                                        method="translation",
+                                        evidence="Translation file pattern"
+                                    )
+            except:
+                continue
+        return VersionDetection()
+    
+    async def _secondary_verification(self, plugin_slug: str, candidate_version: str) -> bool:
+        """Secondary verification methods"""
+        # 1. Check nếu version có trong changelog
+        changelog_has_version = await self._check_version_in_changelog(plugin_slug, candidate_version)
+        
+        # 2. Check nếu version có trong file headers khác
+        other_files_have_version = await self._check_version_in_other_files(plugin_slug, candidate_version)
+        
+        # 3. Check version consistency với assets
+        assets_consistent = await self._check_assets_version_consistency(plugin_slug, candidate_version)
+        
+        verification_count = sum([changelog_has_version, other_files_have_version, assets_consistent])
+        return verification_count >= 2
+    
+    def _cross_validate_versions(self, results: List[VersionDetection], plugin_slug: str) -> VersionDetection:
+        """Cross-validate và chọn version tốt nhất"""
+        if not results:
+            return VersionDetection()
+        
+        # Nhóm các kết quả theo version
+        version_groups = defaultdict(list)
+        for result in results:
+            if result.version:
+                version_groups[result.version].append(result)
+        
+        if not version_groups:
+            return VersionDetection()
+        
+        # Tính score cho mỗi version
+        version_scores = {}
+        for version, group in version_groups.items():
+            # Base score từ confidence
+            total_confidence = sum(r.confidence for r in group)
+            method_count = len(group)
+            
+            # Bonus cho nhiều method xác nhận
+            method_bonus = min(method_count * 5, 20)
+            
+            # Bonus cho high-confidence methods
+            high_conf_bonus = sum(5 for r in group if r.confidence >= 80)
+            
+            final_score = (total_confidence / len(group)) + method_bonus + high_conf_bonus
+            version_scores[version] = min(final_score, 100)
+        
+        # Chọn version có score cao nhất
+        best_version = max(version_scores.items(), key=lambda x: x[1])
+        
+        # Tạo kết quả tổng hợp
+        best_group = version_groups[best_version[0]]
+        best_methods = ', '.join(set(r.method for r in best_group))
+        
+        return VersionDetection(
+            version=best_version[0],
+            confidence=int(best_version[1]),
+            method=f"cross_validated[{best_methods}]",
+            evidence=f"Validated by {len(best_group)} methods"
+        )
+    
+    async def _find_main_plugin_files(self, plugin_slug: str) -> List[str]:
+        """Tìm file chính của plugin"""
+        candidates = []
+        
+        # Thử truy cập thư mục plugin để xem file nào tồn tại
+        for scheme in ['https://', 'http://']:
+            url = f"{scheme}{self.domain}/wp-content/plugins/{plugin_slug}/"
+            try:
+                async with self.session.get(url, timeout=3, ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text()
+                        
+                        # Tìm link đến các file PHP
+                        php_files = re.findall(r'href="([^"]+\.php)"', content, re.IGNORECASE)
+                        for php_file in php_files:
+                            # Loại bỏ các file không phải plugin chính
+                            if not any(x in php_file.lower() for x in ['test', 'example', 'demo']):
+                                candidates.append(php_file.split('/')[-1])
+            except:
+                continue
+        
+        # Thêm các file phổ biến nếu chưa có
+        common_files = [
+            f"{plugin_slug}.php",
+            f"{plugin_slug.replace('-', '_')}.php",
+            "index.php",
+            "plugin.php",
+            "main.php",
+            f"class-{plugin_slug}.php",
+        ]
+        
+        candidates.extend(common_files)
+        return list(set(candidates))[:10]  # Giới hạn 10 file
     
     async def _get_homepage_html(self) -> Optional[str]:
+        """Cache homepage HTML"""
         if self.html_cache is not None:
             return self.html_cache
         
         for scheme in ['https://', 'http://']:
             url = f"{scheme}{self.domain}"
             try:
-                async with self.session.get(url, timeout=8, ssl=False) as resp:
+                async with self.session.get(url, timeout=10, ssl=False) as resp:
                     if resp.status == 200:
-                        html = await resp.text(encoding='utf-8', errors='ignore')
+                        html = await resp.text()
                         self.html_cache = html
                         return html
             except:
@@ -2151,32 +2447,91 @@ class PluginVersionResolver:
         self.html_cache = None
         return None
     
+    async def _collect_js_assets(self) -> Dict[str, str]:
+        """Collect JS assets từ homepage"""
+        if self.js_assets_cache:
+            return self.js_assets_cache
+        
+        html = await self._get_homepage_html()
+        if not html:
+            return {}
+        
+        # Tìm tất cả JS files
+        js_patterns = [
+            r'src="([^"]+\.js(?:\?[^"]+)?)"',
+            r"src='([^']+\.js(?:\?[^']+)?)'",
+        ]
+        
+        js_urls = set()
+        for pattern in js_patterns:
+            matches = re.findall(pattern, html, re.IGNORECASE)
+            js_urls.update(matches)
+        
+        # Tải JS files song song
+        async def fetch_js(url: str):
+            try:
+                if not url.startswith(('http://', 'https://')):
+                    url = urljoin(f"http://{self.domain}", url)
+                
+                async with self.session.get(url, timeout=5, ssl=False) as resp:
+                    if resp.status == 200:
+                        return url, await resp.text()
+            except:
+                pass
+            return url, ""
+        
+        tasks = [fetch_js(url) for url in js_urls if 'wp-content' in url]
+        results = await asyncio.gather(*tasks)
+        
+        self.js_assets_cache = {url: content for url, content in results if content}
+        return self.js_assets_cache
+    
     def _is_valid_version(self, version: str) -> bool:
-        if not version or len(version) > 15:
+        """Enhanced version validation với strict rules"""
+        if not version or len(version) > 20:
             return False
         
-        pattern = r'^\d+(?:\.\d+)*$'
+        # Pattern với optional suffix (1.2.3-beta, 2.0.0-rc1)
+        pattern = r'^\d+(?:\.\d+)*(?:-[a-z0-9]+(?:\.\d+)?)?$'
         if not re.match(pattern, version):
             return False
         
-        parts = version.split('.')
-        if len(parts) > 4:
+        # Split thành parts
+        if '-' in version:
+            main_version, suffix = version.split('-', 1)
+        else:
+            main_version, suffix = version, None
+        
+        # Validate main version parts
+        parts = main_version.split('.')
+        if len(parts) > 4:  # Quá nhiều parts
             return False
         
+        # Mỗi part phải là số hợp lệ
         try:
             for part in parts:
                 num = int(part)
-                if num > 999:
+                if num > 999 or num < 0:  # Version part không hợp lệ
                     return False
         except:
             return False
         
+        # Major version không quá lớn
         if int(parts[0]) > 100:
             return False
         
-        if len(parts) == 1 and len(parts[0]) > 4:
+        # Suffix validation nếu có
+        if suffix:
+            suffix_pattern = r'^[a-z][a-z0-9]*(?:\.[0-9]+)?$'
+            if not re.match(suffix_pattern, suffix):
+                return False
+        
+        # Blacklist các version không hợp lệ
+        blacklist = ['0.0.0', '1.0.0', '2.0.0', '999', '9999']
+        if version in blacklist:
             return False
         
+        # Không phải là năm (1900-2100)
         if len(parts) == 1 and 1900 <= int(parts[0]) <= 2100:
             return False
         

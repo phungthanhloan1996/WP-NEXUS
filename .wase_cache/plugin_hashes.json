@@ -1,0 +1,40 @@
+{
+  "yoast-seo": {
+    "18.0": {
+      "readme_md5": "5904fdbfa6f1a388aed9c9dcb3fa53d0"
+    },
+    "18.1": {
+      "readme_md5": "138d4b83f42bd4a2108996d37bc3b6bc"
+    }
+  },
+  "elementor": {
+    "3.0.0": {
+      "readme_md5": "2569994a90bc3914d85f64a07f81a85b",
+      "main_php_md5": "566f8c4ba616cb06d33494b8b663bd9c"
+    },
+    "3.0.1": {
+      "readme_md5": "9191bf1b70b1ba031ab2b7f8bd9d1035",
+      "main_php_md5": "440ceba6fcdb5643cad8ce96b64ad8b3"
+    }
+  },
+  "woocommerce": {
+    "10.0.0": {
+      "readme_md5": "59ce35d8f4d3f69c6cf0ac5e4577883f",
+      "main_php_md5": "2be23c342aab8245bb312786b12ebaeb"
+    },
+    "10.0.1": {
+      "readme_md5": "4bd2e700463e050a93a27ee66ba9542c",
+      "main_php_md5": "7a50f4cdd1ac10a840bcd5b0f8f23aae"
+    }
+  },
+  "akismet": {
+    "2.2.5": {
+      "readme_md5": "f4f0d71d5d47867c1b2b526560eda868",
+      "main_php_md5": "dc923f329331af4a7a218a202ef77f45"
+    },
+    "2.2.6": {
+      "readme_md5": "48c52025b5f28731e9a0c864c189c2e7",
+      "main_php_md5": "384b921bfa464c1621828b966d255021"
+    }
+  }
+}
