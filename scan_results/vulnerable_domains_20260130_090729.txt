@@ -1,8 +1,0 @@
-# WordPress Vulnerability Scan Results
-# Timestamp: 20260130_090729
-# Total results: 119
-
-meso.com.vn|Risk:33|WP:6.0.2|CVEs:2
-earlyrich.com|Risk:45|WP:6.9|CVEs:4
-bimhanoi.com.vn|Risk:53|WP:6.4.7|CVEs:5
-cybersecuritywebtest.com|Risk:64|WP:|CVEs:8
